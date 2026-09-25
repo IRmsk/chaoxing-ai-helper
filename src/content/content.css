@@ -1,0 +1,12 @@
+/*
+ * content script 注入到页面的全局样式（极简）。
+ *
+ * 悬浮面板与选择器调试器的样式**全部**放在各自的 Shadow DOM 内，
+ * 这里只保留极少数必须作用于宿主文档的规则，避免污染学习通页面。
+ */
+
+/* 选择器调试模式开启时，整页光标变为十字准星，提示用户正在拾取元素 */
+html.cxai-picking,
+html.cxai-picking * {
+  cursor: crosshair !important;
+}

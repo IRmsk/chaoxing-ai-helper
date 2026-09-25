@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI 预览 · 学习通 AI 实践助手</title>
+    <link rel="stylesheet" href="./preview.css" />
+
+    <!-- 捕获模块加载/执行期错误，便于自动化脚本读取失败原因 -->
+    <script>
+      window.__bootErrors = [];
+      window.addEventListener('error', function (e) {
+        window.__bootErrors.push(String((e && (e.message || e.error)) || 'unknown error'));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        window.__bootErrors.push('rejection: ' + String((e && e.reason) || 'unknown'));
+      });
+    </script>
+
+    <!--
+      扩展 API 桩：必须在扩展代码之前执行。
+      这里用「内联经典脚本」放在 head，确保早于末尾内联的业务 bundle。
+    -->
+    <script>
+      (function installChromeStub() {
+        var store = {};
+        var listeners = [];
+
+        function notify(changes) {
+          listeners.forEach(function (fn) {
+            fn(changes, 'local');
+          });
+        }
+
+        var local = {
+          get: function (keys) {
+            var out = {};
+            if (keys === null || keys === undefined) return Promise.resolve(Object.assign({}, store));
+            var list = Array.isArray(keys) ? keys : [keys];
+            list.forEach(function (k) {
+              if (Object.prototype.hasOwnProperty.call(store, k)) out[k] = store[k];
+            });
+            return Promise.resolve(out);
+          },
+          set: function (items) {
+            var changes = {};
+            Object.keys(items).forEach(function (k) {
+              changes[k] = { oldValue: store[k], newValue: items[k] };
+              store[k] = items[k];
+            });
+            notify(changes);
+            return Promise.resolve();
+          },
+          remove: function (keys) {
+            (Array.isArray(keys) ? keys : [keys]).forEach(function (k) {
+              delete store[k];
+            });
+            return Promise.resolve();
+          },
+          clear: function () {
+            store = {};
+            return Promise.resolve();
+          },
+        };
+
+        // 预置一份「已配置好」的数据，让预览页直接呈现正常状态
+        store['cxai:config'] = {
+          apiKey: 'sk-demo-key-not-a-real-secret',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-chat',
+          systemPrompt:
+            '你是学习通 AI 实践课的对话助手。请用简洁、口语化、符合学生身份的中文回答，控制在 100-200 字，不要使用 Markdown 列表。',
+          maxRounds: 10,
+          intervalSec: 3,
+          replyTimeoutSec: 90,
+          questionTimeoutSec: 120,
+          requestTimeoutSec: 60,
+          temperature: 1.0,
+          autoStart: false,
+        };
+        store['cxai:panelPrefs'] = { x: 24, y: 96, collapsed: false };
+
+        var DEMO_STATUS = {
+          state: 'WAITING_REPLY',
+          tone: 'waiting',
+          round: 3,
+          maxRounds: 10,
+          courseId: '266014297',
+          message: 'AI 正在回复…（已输出 46 字）',
+          lastQuestion: '如果把这个思路放到真实的课程场景里，你认为最先会遇到什么约束？请结合具体例子回答。',
+          lastAnswer: '我觉得最先遇到的约束是数据可得性，其次是算力成本。课堂上我们能拿到的样本量很小…',
+          detected: true,
+          confidence: 0.9,
+          updatedAt: Date.now(),
+        };
+
+        var DEMO_DETECT = {
+          matched: {
+            input: 'textarea[placeholder*="输入"]',
+            messageList: '[class*="message-list"]',
+            chatRoot: '[class*="chat-container"]',
+            sendBtn: 'button[class*="send"]',
+          },
+          source: 'selector',
+          confidence: 0.9,
+          inputKind: 'textarea',
+          messageCount: 7,
+          aiMessageCount: 4,
+          userMessageCount: 3,
+          sample: '[ai] 你好，我是本课的 AI 实践助手… ｜ [user] 我理解为… ｜ [ai] 很好，你的理解基本到位…',
+        };
+
+        var port = {
+          postMessage: function () {},
+          disconnect: function () {},
+          onMessage: { addListener: function () {} },
+          onDisconnect: { addListener: function () {} },
+        };
+
+        window.chrome = {
+          runtime: {
+            id: 'demo-extension-id',
+            lastError: undefined,
+            connect: function () {
+              return port;
+            },
+            sendMessage: function (msg) {
+              var type = msg && msg.type;
+              if (type === 'cxai:get-status') {
+                return Promise.resolve({
+                  ok: true,
+                  data: { status: DEMO_STATUS, hasWorker: true, detect: DEMO_DETECT, contextLength: 6 },
+                });
+              }
+              if (type === 'cxai:test-connection') {
+                return Promise.resolve({
+                  ok: true,
+                  data: {
+                    ok: true,
+                    message: '连接成功（模型 deepseek-chat）：正常',
+                    latencyMs: 412,
+                    models: ['deepseek-chat', 'deepseek-reasoner'],
+                  },
+                });
+              }
+              if (type === 'cxai:fetch-models') {
+                return Promise.resolve({ ok: true, data: ['deepseek-chat', 'deepseek-reasoner'] });
+              }
+              if (type === 'cxai:get-logs') {
+                return Promise.resolve({ ok: true, data: { entries: [], text: '' } });
+              }
+              return Promise.resolve({ ok: true, data: true });
+            },
+            onMessage: { addListener: function () {} },
+          },
+          storage: {
+            local: local,
+            session: local,
+            onChanged: {
+              addListener: function (fn) {
+                listeners.push(fn);
+              },
+              removeListener: function (fn) {
+                listeners = listeners.filter(function (f) {
+                  return f !== fn;
+                });
+              },
+            },
+          },
+          tabs: {
+            query: function () {
+              return Promise.resolve([
+                {
+                  id: 1,
+                  url: 'https://mooc2-ans.chaoxing.com/mooc2-ans-vue/taskChain/student/answer?courseId=266014297&clazzId=151733808',
+                },
+              ]);
+            },
+          },
+          permissions: {
+            contains: function () {
+              return Promise.resolve(true);
+            },
+            request: function () {
+              return Promise.resolve(true);
+            },
+          },
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="pv-head">
+      <h1>学习通 AI 实践助手 · UI 预览</h1>
+      <p>
+        用桩（stub）替换扩展 API，在普通网页里真实渲染 <code>Panel</code> 与 <code>Popup</code> 两个界面组件。
+        切换场景可查看各状态下的悬浮面板表现。样式与扩展运行时完全一致（面板在 Shadow DOM 内）。
+      </p>
+    </header>
+
+    <main class="pv-layout">
+      <section class="pv-col">
+        <div class="pv-col-head">
+          <span>① Popup 设置弹窗</span>
+          <span class="pv-tip">真实宽度 384px</span>
+        </div>
+        <div class="pv-frame" id="popup-mount"></div>
+      </section>
+
+      <section class="pv-col">
+        <div class="pv-col-head">
+          <span>② 页面内悬浮控制面板</span>
+          <span class="pv-tip">右下角实时状态</span>
+        </div>
+        <div class="pv-scenarios" id="scenario-bar"></div>
+        <div class="pv-stage" id="panel-mount"></div>
+        <div class="pv-log" id="command-log">（点击面板按钮，这里会打印下发的指令）</div>
+      </section>
+    </main>
+
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

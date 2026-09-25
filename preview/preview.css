@@ -1,0 +1,137 @@
+/*
+ * UI 预览页样式。
+ *
+ * ⚠️ 本文件必须在 `@/popup/popup.css` **之后**加载：
+ * popup.css 里有 `body { width: 384px; max-height: 600px }` 这类面向弹窗的
+ * 全局规则，预览页需要把它们覆盖回来（同优先级下后加载者生效）。
+ */
+
+body {
+  width: auto;
+  max-height: none;
+  min-height: 100vh;
+  overflow: auto;
+  padding: 0;
+  background: #eef1f6;
+}
+
+code {
+  background: #e4e7ec;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+}
+
+.pv-head {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 22px 22px 10px;
+}
+
+.pv-head h1 {
+  font-size: 18px;
+  margin: 0 0 6px;
+  color: #1d2939;
+}
+
+.pv-head p {
+  margin: 0;
+  color: #667085;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.pv-layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 12px 22px 40px;
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.pv-col-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #344054;
+}
+
+.pv-tip {
+  font-weight: 400;
+  font-size: 11.5px;
+  color: #98a2b3;
+}
+
+/* Popup 预览：用一个真实宽度的框把弹窗内容包住 */
+.pv-frame {
+  width: 384px;
+  max-height: 640px;
+  overflow-y: auto;
+  background: var(--cx-bg, #f7f8fa);
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.1);
+}
+
+/* 悬浮面板预览舞台 */
+.pv-stage {
+  position: relative;
+  height: 470px;
+  background:
+    linear-gradient(0deg, rgba(47, 107, 255, 0.03), rgba(47, 107, 255, 0.03)),
+    repeating-linear-gradient(45deg, #fafbfc 0 12px, #f5f7fa 12px 24px);
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.pv-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.pv-scenario {
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #344054;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.pv-scenario:hover {
+  border-color: #2f6bff;
+  color: #2f6bff;
+}
+
+.pv-scenario.active {
+  background: #2f6bff;
+  border-color: #2f6bff;
+  color: #fff;
+  font-weight: 600;
+}
+
+.pv-log {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #0b1220;
+  color: #d5dbe8;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: auto;
+}

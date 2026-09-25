@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mock 验证 · 学习通 AI 实践助手</title>
+    <!-- 捕获模块加载/执行期错误，便于自动化脚本读取失败原因 -->
+    <script>
+      window.__bootErrors = [];
+      window.addEventListener('error', function (e) {
+        window.__bootErrors.push(String((e && (e.message || e.error)) || 'unknown error'));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        window.__bootErrors.push('rejection: ' + String((e && e.reason) || 'unknown'));
+      });
+    </script>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="page-head">
+      <h1>学习通 AI 实践助手 · Mock 验证台</h1>
+      <p>
+        本页用一份<b>模拟聊天 DOM</b> 验证 content 层的核心链路：DOM 探测 → 写入输入框 → 触发发送
+        → 回复完成检测 → 轮次计数。不依赖真实学习通页面，也不发起任何网络请求。
+      </p>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <div class="panel-head">
+          <span>模拟对话窗口</span>
+          <span class="panel-tip">可手动输入，体验流式回复</span>
+        </div>
+        <!-- 聊天 DOM 由 mock-chat.ts 动态生成（可选择「混淆类名」模式） -->
+        <div id="chat-mount"></div>
+      </section>
+
+      <!-- data-cxai-ui = 「这是工具自身 UI，不算页面内容」：
+           探测启发式会跳过它，页面背景资料采集也会跳过它 -->
+      <section class="panel" data-cxai-ui="mock-harness">
+        <div class="panel-head">
+          <span>自动化测试</span>
+          <select id="mode-select">
+            <option value="realSite">学习通真实结构（CDP 实测，含「继续」门禁）</option>
+            <option value="realNested">对方条目内嵌我方消息</option>
+            <option value="real">早期猜测结构（兄弟节点）</option>
+            <option value="keyword">类名含关键字（走选择器候选表）</option>
+            <option value="obfuscated">混淆类名（走启发式嗅探）</option>
+            <option value="flow">任务流 + 上传作品（节点解析 / 附件上传）</option>
+            <option value="flowStale">任务流·卡片标记滞留（已到上传节点却显示上一节点）</option>
+            <option value="flowUploadFirst">任务流·首个节点是上传作品（类型文案缺失）</option>
+            <option value="flowDone">任务流·全部完成后收尾（哨兵行 / 终止标记）</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button id="btn-detect" type="button">1. 探测 DOM</button>
+          <button id="btn-run" type="button" class="primary">2. 跑完整 3 轮</button>
+          <button id="btn-reset" type="button">重置</button>
+        </div>
+        <pre id="log" class="log"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,657 @@
+/*
+ * Mock 验证台样式（仅用于本地调试，不参与扩展产物）。
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 24px;
+  background: #f5f6f8;
+  color: #1d2939;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+}
+
+.page-head {
+  max-width: 1180px;
+  margin: 0 auto 16px;
+}
+
+.page-head h1 {
+  font-size: 18px;
+  margin: 0 0 6px;
+}
+
+.page-head p {
+  margin: 0;
+  color: #667085;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.layout {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e4e7ec;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.panel-tip {
+  font-weight: 400;
+  color: #98a2b3;
+  font-size: 11.5px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+
+button {
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 11px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button:hover {
+  border-color: #2f6bff;
+  color: #2f6bff;
+}
+
+button.primary {
+  background: #2f6bff;
+  border-color: #2f6bff;
+  color: #fff;
+  font-weight: 600;
+}
+
+.log {
+  margin: 12px;
+  padding: 10px;
+  background: #0b1220;
+  color: #d5dbe8;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  max-height: 460px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------------- 模拟聊天窗口 ---------------- */
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+  margin: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #fafbfc;
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #2f6bff, #5b8cff);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.chat-message-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message-item {
+  display: flex;
+  gap: 8px;
+  max-width: 88%;
+}
+
+.message-item.left {
+  align-self: flex-start;
+}
+
+.message-item.right {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+}
+
+.message-item.left .message-avatar {
+  background: #2f6bff;
+}
+
+.message-item.right .message-avatar {
+  background: #12b76a;
+}
+
+.message-bubble {
+  background: #fff;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-item.right .message-bubble {
+  background: #e8f1ff;
+  border-color: #c7d7fe;
+}
+
+.chat-footer {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid #e4e7ec;
+  background: #fff;
+  align-items: flex-end;
+}
+
+.chat-input {
+  flex: 1;
+  min-height: 38px;
+  max-height: 120px;
+  resize: vertical;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.chat-input:focus {
+  border-color: #2f6bff;
+}
+
+.send-btn {
+  flex: none;
+  background: #2f6bff;
+  border-color: #2f6bff;
+  color: #fff;
+  font-weight: 600;
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------ */
+/* 真实站点结构（real 模式）                                           */
+/* ------------------------------------------------------------------ */
+
+.answerBox {
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+  margin: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #fafbfc;
+  overflow: hidden;
+}
+
+.answerHead {
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #2f6bff, #5b8cff);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.answerList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* AI 消息 */
+.agent {
+  display: block;
+}
+
+.agentRight {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.agentLeft {
+  flex: none;
+}
+
+.agentAvatar {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #2f6bff;
+  color: #fff;
+  font-size: 10px;
+  align-items: center;
+  justify-content: center;
+}
+
+.agentAnswer {
+  max-width: 84%;
+}
+
+.answer_content {
+  background: #fff;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  line-height: 1.6;
+}
+
+.answer_content p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 用户消息：靠右 */
+.userAnswer {
+  align-self: flex-end;
+  max-width: 84%;
+  background: #e8f1ff;
+  border: 1px solid #c7d7fe;
+  border-radius: 10px;
+  padding: 8px 10px;
+  line-height: 1.6;
+}
+
+.userAnswer .answer_content {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+/* 底栏 */
+.answerBox .footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid #e4e7ec;
+  background: #fff;
+}
+
+.answerBox .messageInput {
+  flex: 1;
+  min-height: 38px;
+  max-height: 110px;
+  resize: vertical;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.answerBox .messageInput:focus {
+  border-color: #2f6bff;
+}
+
+/* 锁定态：灰底、禁止输入 —— 与学习通一致 */
+.answerBox .messageInput.messageInputLock {
+  background: #f2f4f7;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+.answerBox .goOnBtnSpan {
+  flex: none;
+  display: inline-block;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: #2f6bff;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.answerBox .sendBtn {
+  flex: none;
+  display: inline-block;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: #2f6bff;
+  color: #fff;
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 发送按钮锁定态：置灰、点击无效 —— 与学习通一致 */
+.answerBox .sendBtn.optionBtnLock {
+  background: #d0d5dd;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+/* 真实层级变体：一轮 = 一个 .agent，.userAnswer 嵌在其内部、靠右显示 */
+.agent > .userAnswer {
+  margin-left: auto;
+  margin-top: 8px;
+  width: fit-content;
+}
+
+.agent:not(:first-child) {
+  margin-top: 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 学习通真实结构（realSite 模式）                                     */
+/* ------------------------------------------------------------------ */
+
+.rightBox.taskChainRightBox {
+  display: flex;
+  flex-direction: column;
+  height: 540px;
+  margin: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.rightBox .actOne {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.rightBox .dialogueMain {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.rightBox .chat {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.rightBox .wrap1000 {
+  display: block;
+}
+
+.rightBox .chapterName {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #667085;
+  font-weight: 600;
+}
+
+.rightBox .agent {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rightBox .agentHead img,
+.rightBox .userHead img {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #dbe4f3;
+}
+
+.rightBox .agentRight {
+  max-width: 82%;
+}
+
+.rightBox .agentName,
+.rightBox .userName {
+  font-size: 11.5px;
+  color: #98a2b3;
+  margin-bottom: 3px;
+}
+
+.rightBox .agentAnswer .answer_content {
+  background: #f6f8fc;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  line-height: 1.6;
+}
+
+.rightBox .agentAnswer p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rightBox .user-chat-item {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.rightBox .userRight {
+  max-width: 82%;
+  text-align: right;
+}
+
+.rightBox .userAnswer {
+  display: inline-block;
+  background: #e8f1ff;
+  border: 1px solid #c7d7fe;
+  border-radius: 10px;
+  padding: 8px 10px;
+  line-height: 1.6;
+  text-align: left;
+  min-width: 40px;
+}
+
+.rightBox .bottom.relativeClass {
+  flex: none;
+  border-top: 1px solid #e4e7ec;
+  padding: 10px;
+  background: #fff;
+}
+
+.rightBox .sendMessage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rightBox .sendMessage > div:first-child {
+  flex: 1;
+}
+
+.rightBox .messageInput {
+  width: 100%;
+  min-height: 38px;
+  max-height: 110px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.rightBox .messageInput.messageInputLock {
+  background: #f2f4f7;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+.rightBox .sendOptionBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rightBox .sendBtn,
+.rightBox .goOnBtnSpan {
+  display: inline-block;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: #2f6bff;
+  color: #fff;
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rightBox .sendBtn.optionBtnLock {
+  background: #d0d5dd;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* 附件选择器：文件输入框是 0×0 的透明覆盖层                            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * 与真实站点一致：`.attCommonUploadBtn` 铺在 `.upload-box` 上做点击热区，
+ * 某些渲染阶段它的尺寸会退化成 0×0。
+ * 上传逻辑**不能要求它「可见」** —— 给隐藏的 file input 赋值 + 派发 change 一样有效。
+ * 这条样式让 mock 能复现线上「未找到文件输入框」的回归场景。
+ */
+#attCommonApp .attCommonUploadBtn,
+.attCommon .attCommonUploadBtn {
+  display: block;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border: 0;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* 初始化提示弹窗（复刻 .init-dialog）                                  */
+/* ------------------------------------------------------------------ */
+
+.init-dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 24, 40, 0.45);
+}
+
+.init-dialog {
+  width: 360px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.2);
+}
+
+.init-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.init-dialog__body {
+  margin: 10px 0 16px;
+  color: #475467;
+  font-size: 13px;
+}
+
+.init-dialog__footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.init-dialog__btn {
+  padding: 7px 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.init-dialog__btn--primary {
+  border-color: #2f6bff;
+  background: #2f6bff;
+  color: #fff;
+}
+
+.flow-card-enter-btn {
+  margin: 8px 12px 12px;
+  padding: 7px 14px;
+  border: 1px solid #2f6bff;
+  border-radius: 8px;
+  background: #fff;
+  color: #2f6bff;
+  cursor: pointer;
+  font-size: 12.5px;
+}

@@ -1,0 +1,357 @@
+/*
+ * 悬浮面板样式。
+ *
+ * 该文件通过 `?inline` 以字符串形式引入，注入到面板自己的 Shadow Root 中，
+ * 因此**不会**污染学习通页面的任何样式，也不受其 reset 影响。
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+.cxai-panel {
+  position: fixed;
+  z-index: 2147483646;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1d2939;
+  user-select: none;
+}
+
+/* ---------------- 折叠态：悬浮球 ---------------- */
+
+.cxai-ball {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid #e4e7ec;
+  box-shadow: 0 6px 20px rgba(16, 24, 40, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cxai-ball:hover {
+  transform: scale(1.06);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.22);
+}
+
+.cxai-ball:active {
+  cursor: grabbing;
+}
+
+.cxai-ball-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  transition: background 0.2s ease;
+}
+
+.cxai-ball-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.cxai-ball.tone-running .cxai-ball-ring {
+  border-color: rgba(18, 183, 106, 0.45);
+  animation: cxai-pulse 1.8s ease-out infinite;
+}
+
+@keyframes cxai-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+/* ---------------- 展开态：卡片 ---------------- */
+
+.cxai-card {
+  width: 296px;
+  background: #ffffff;
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18);
+  overflow: hidden;
+}
+
+.cxai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #2f6bff 0%, #5b8cff 100%);
+  color: #ffffff;
+  cursor: grab;
+}
+
+.cxai-head:active {
+  cursor: grabbing;
+}
+
+.cxai-head-title {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cxai-icon-btn {
+  border: 0;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.cxai-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.cxai-body {
+  padding: 12px;
+}
+
+.cxai-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cxai-lamp {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex: none;
+}
+
+.cxai-status-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.cxai-status-title {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: #1d2939;
+}
+
+.cxai-status-msg {
+  font-size: 12px;
+  color: #667085;
+  word-break: break-word;
+  margin-top: 2px;
+}
+
+.cxai-status-msg.is-error {
+  color: #b42318;
+}
+
+.cxai-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.cxai-meter-label {
+  font-size: 12px;
+  color: #475467;
+  white-space: nowrap;
+}
+
+.cxai-meter-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #eef1f6;
+  overflow: hidden;
+}
+
+.cxai-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2f6bff, #5b8cff);
+  transition: width 0.3s ease;
+}
+
+.cxai-meter-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #344054;
+  white-space: nowrap;
+}
+
+.cxai-detail {
+  margin-top: 8px;
+  border-top: 1px dashed #eaecf0;
+  padding-top: 8px;
+  font-size: 11.5px;
+  color: #667085;
+  display: grid;
+  gap: 4px;
+}
+
+.cxai-detail-row {
+  display: flex;
+  gap: 6px;
+}
+
+.cxai-detail-key {
+  flex: none;
+  color: #98a2b3;
+}
+
+.cxai-detail-val {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  color: #475467;
+}
+
+.cxai-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.cxai-btn {
+  border: 1px solid #d0d5dd;
+  background: #ffffff;
+  color: #344054;
+  border-radius: 8px;
+  padding: 7px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.cxai-btn:hover:not(:disabled) {
+  border-color: #2f6bff;
+  color: #2f6bff;
+}
+
+.cxai-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cxai-btn.primary {
+  background: #2f6bff;
+  border-color: #2f6bff;
+  color: #ffffff;
+}
+
+.cxai-btn.primary:hover:not(:disabled) {
+  background: #2559e0;
+  color: #ffffff;
+}
+
+.cxai-btn.danger {
+  border-color: #fda29b;
+  color: #b42318;
+}
+
+.cxai-btn.danger:hover:not(:disabled) {
+  border-color: #f04438;
+  color: #d92d20;
+}
+
+.cxai-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cxai-link {
+  border: 0;
+  background: transparent;
+  color: #2f6bff;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+
+.cxai-link:hover {
+  text-decoration: underline;
+}
+
+.cxai-tip {
+  font-size: 11px;
+  color: #98a2b3;
+}
+
+.cxai-banner {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fffaeb;
+  border: 1px solid #fedf89;
+  color: #93370d;
+  font-size: 11.5px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 任务流节点进度                                                      */
+/* ------------------------------------------------------------------ */
+
+.cxai-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--cx-muted);
+  min-width: 0;
+}
+
+.cxai-node-index {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #eff4ff;
+  color: var(--cx-brand);
+  font-weight: 600;
+}
+
+.cxai-node-type {
+  flex: none;
+  color: var(--cx-faint);
+}
+
+.cxai-node-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cx-text, #344054);
+}

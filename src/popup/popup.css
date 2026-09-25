@@ -1,0 +1,510 @@
+/*
+ * Popup 样式（浅色主题，宽 384px）。
+ */
+
+:root {
+  --cx-bg: #f7f8fa;
+  --cx-card: #ffffff;
+  --cx-border: #e4e7ec;
+  --cx-text: #1d2939;
+  --cx-muted: #667085;
+  --cx-faint: #98a2b3;
+  --cx-brand: #2f6bff;
+  --cx-brand-dark: #2559e0;
+  --cx-danger: #d92d20;
+  --cx-ok: #12b76a;
+  --cx-warn: #f79009;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 384px;
+  min-height: 420px;
+  max-height: 600px;
+  overflow-y: auto;
+  background: var(--cx-bg);
+  color: var(--cx-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.app {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+/* ---------------- 顶部 ---------------- */
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2f6bff, #5b8cff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  flex: none;
+}
+
+.top-title {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+}
+
+.top-version {
+  font-size: 11px;
+  color: var(--cx-faint);
+}
+
+/* ---------------- 卡片 ---------------- */
+
+.card {
+  background: var(--cx-card);
+  border: 1px solid var(--cx-border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cx-muted);
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-title .hint {
+  font-weight: 400;
+  color: var(--cx-faint);
+}
+
+/* ---------------- 表单 ---------------- */
+
+.field {
+  margin-bottom: 10px;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--cx-muted);
+  margin-bottom: 5px;
+}
+
+.field-label .required {
+  color: var(--cx-danger);
+}
+
+.field-label .inline-tip {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--cx-faint);
+}
+
+.row {
+  display: grid;
+  gap: 8px;
+}
+
+.row.cols-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.row.cols-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+input[type='text'],
+input[type='password'],
+input[type='number'],
+textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--cx-border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--cx-text);
+  background: #fff;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--cx-brand);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.12);
+}
+
+input.invalid,
+textarea.invalid {
+  border-color: var(--cx-danger);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
+.input-with-btn {
+  display: flex;
+  gap: 6px;
+}
+
+.input-with-btn > input,
+.input-with-btn > .combo {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * 自绘下拉（替代原生 <datalist>）。
+ * 原生 datalist 在扩展弹窗里不会渲染，因此 Base URL / 模型都用这个组件。
+ */
+.combo {
+  position: relative;
+  display: flex;
+  gap: 4px;
+}
+
+.combo > input {
+  flex: 1;
+  min-width: 0;
+}
+
+.combo-toggle {
+  padding: 7px 8px;
+  line-height: 1;
+  color: var(--cx-muted);
+}
+
+.combo-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  background: #fff;
+  border: 1px solid var(--cx-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(16, 24, 40, 0.16);
+  max-height: 176px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.combo-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.combo-item:hover {
+  background: #eff4ff;
+  color: var(--cx-brand);
+}
+
+.combo-item.active {
+  background: #e8f1ff;
+  color: var(--cx-brand-dark);
+  font-weight: 600;
+}
+
+.combo-empty {
+  padding: 8px;
+  font-size: 11.5px;
+  color: var(--cx-faint);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.field-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--cx-danger);
+}
+
+/* ---------------- 按钮 ---------------- */
+
+button {
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid var(--cx-border);
+  background: #fff;
+  color: var(--cx-text);
+  padding: 7px 12px;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--cx-brand);
+  color: var(--cx-brand);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--cx-brand);
+  border-color: var(--cx-brand);
+  color: #fff;
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--cx-brand-dark);
+  border-color: var(--cx-brand-dark);
+  color: #fff;
+}
+
+button.danger {
+  border-color: #fda29b;
+  color: var(--cx-danger);
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--cx-danger);
+  color: var(--cx-danger);
+}
+
+button.ghost {
+  background: transparent;
+}
+
+.icon-btn {
+  padding: 7px 9px;
+}
+
+/* ---------------- 状态 ---------------- */
+
+.status-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lamp {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.status-name {
+  font-weight: 600;
+}
+
+.status-round {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--cx-muted);
+}
+
+.status-msg {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--cx-muted);
+  word-break: break-word;
+}
+
+.status-msg.is-error {
+  color: var(--cx-danger);
+}
+
+.kv {
+  margin-top: 8px;
+  border-top: 1px dashed var(--cx-border);
+  padding-top: 8px;
+  display: grid;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--cx-muted);
+}
+
+.kv-row {
+  display: flex;
+  gap: 6px;
+}
+
+.kv-key {
+  flex: none;
+  color: var(--cx-faint);
+  min-width: 46px;
+}
+
+.kv-val {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+
+/* ---------------- 开关 ---------------- */
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.switch-row + .switch-row {
+  border-top: 1px dashed var(--cx-border);
+}
+
+.switch-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.switch-text .t {
+  font-size: 12.5px;
+}
+
+.switch-text .d {
+  font-size: 11px;
+  color: var(--cx-faint);
+}
+
+.switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+
+.switch-track {
+  position: absolute;
+  inset: 0;
+  background: #d0d5dd;
+  border-radius: 999px;
+  transition: background 0.15s ease;
+  pointer-events: none;
+}
+
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.24);
+  transition: transform 0.15s ease;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--cx-brand);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(16px);
+}
+
+/* ---------------- 提示条 ---------------- */
+
+.toast {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid;
+  word-break: break-word;
+}
+
+.toast.ok {
+  background: #ecfdf3;
+  border-color: #a6f4c5;
+  color: #027a48;
+}
+
+.toast.err {
+  background: #fef3f2;
+  border-color: #fecdca;
+  color: #b42318;
+}
+
+.toast.info {
+  background: #eff4ff;
+  border-color: #c7d7fe;
+  color: #3538cd;
+}
+
+/* ---------------- 底部操作 ---------------- */
+
+.footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.footer .spacer {
+  flex: 1;
+}
+
+.footnote {
+  font-size: 11px;
+  color: var(--cx-faint);
+  line-height: 1.5;
+}
+
+.footnote code {
+  background: #eef1f6;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+}

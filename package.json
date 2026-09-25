@@ -1,0 +1,47 @@
+{
+  "name": "chaoxing-ai-helper",
+  "private": true,
+  "version": "2.2.0",
+  "description": "学习通（超星）AI 实践对话自动作答助手 —— Microsoft Edge / Chrome Manifest V3 扩展",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite build --watch --mode development",
+    "build": "npm run typecheck && vite build",
+    "build:only": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "mock:dev": "vite --config vite.mock.config.ts",
+    "mock:build": "vite build --config vite.mock.config.ts && node scripts/inline-html.mjs mock-dist",
+    "mock:preview": "node scripts/serve.mjs mock-dist 5199",
+    "ui:dev": "vite --config vite.ui.config.ts",
+    "ui:build": "vite build --config vite.ui.config.ts && node scripts/inline-html.mjs ui-preview-dist",
+    "preview:build": "npm run build:only && npm run mock:build && npm run ui:build && npm run diag:build",
+    "zip": "node scripts/zip.mjs",
+    "icons": "python scripts/gen_icons.py",
+    "verify": "npm run mock:build && node scripts/verify-mock.mjs",
+    "verify:all": "npm run mock:build && node scripts/verify-mock.mjs realSite && node scripts/verify-mock.mjs realNested && node scripts/verify-mock.mjs real && node scripts/verify-mock.mjs keyword && node scripts/verify-mock.mjs obfuscated && node scripts/verify-mock.mjs flow && node scripts/verify-mock.mjs flowStale && node scripts/verify-mock.mjs flowUploadFirst && node scripts/verify-mock.mjs flowDone",
+    "diag:build": "vite build --config vite.diag.config.ts",
+    "probe:real": "node scripts/probe-real.mjs taskChain/student/answer diag-dist/diag.js \"JSON.stringify(window.__cxaiFlow(), null, 1)\"",
+    "check:ui": "node scripts/check-ui.mjs",
+    "cdp:check": "node scripts/cdp-check.mjs",
+    "probe:live": "node scripts/probe-real.mjs"
+  },
+  "dependencies": {
+    "docx": "^9.7.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^3.0.0",
+    "@types/chrome": "^0.3.0",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6"
+  }
+}
