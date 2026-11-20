@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 import { createLogger } from './logger.mjs';
+import { activeAccount, sessionFileOf } from './account.mjs';
 
 const log = createLogger('session');
 
@@ -31,7 +32,14 @@ const AGENT_BUNDLE = resolve(ROOT, 'dist/agent.js');
  * 解决：登录后立刻 `storageState()` 导出（它包含 session cookie），
  * 每次启动再 `addCookies()` 灌回去。
  */
-const SESSION_FILE = resolve(ROOT, '.session.json');
+const LEGACY_SESSION_FILE = resolve(ROOT, '.session.json');
+
+/** 当前账号对应的 cookie 快照路径。 */
+function currentSessionFile(phone) {
+  const p = phone || activeAccount()?.phone || '';
+  if (p) return sessionFileOf(p);
+  return LEGACY_SESSION_FILE;
+}
 
 /** 学习通登录页（首次人工登录用）。 */
 export const LOGIN_URL =
@@ -43,8 +51,10 @@ export const SMS_LOGIN_URL =
   '&refer=http%3A%2F%2Fi.mooc.chaoxing.com&retainlogin=2';
 
 export class BrowserSession {
-  constructor(config) {
+  constructor(config, options = {}) {
     this.config = config;
+    /** 目标账号手机号；不传则用账号池里激活的那个。 */
+    this.phone = options.phone || '';
     this.context = null;
     this.page = null;
     this.browser = null;
@@ -86,9 +96,10 @@ export class BrowserSession {
         userAgent:
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
       });
-      if (existsSync(SESSION_FILE)) {
+      const ephFile = currentSessionFile(this.phone);
+      if (existsSync(ephFile)) {
         try {
-          const snap = JSON.parse(readFileSync(SESSION_FILE, 'utf8'));
+          const snap = JSON.parse(readFileSync(ephFile, 'utf8'));
           if (Array.isArray(snap.cookies) && snap.cookies.length) {
             await this.context.addCookies(snap.cookies);
           }
@@ -150,9 +161,10 @@ export class BrowserSession {
 
   /** 把上次保存的 cookie 快照灌回 context。 */
   async restoreSession() {
-    if (!existsSync(SESSION_FILE)) return;
+    const file = currentSessionFile(this.phone);
+    if (!existsSync(file)) return;
     try {
-      const snap = JSON.parse(readFileSync(SESSION_FILE, 'utf8'));
+      const snap = JSON.parse(readFileSync(file, 'utf8'));
       const cookies = Array.isArray(snap.cookies) ? snap.cookies : [];
       if (!cookies.length) return;
       // storageState 导出时 expires=-1 表示 session cookie，addCookies 认这个值
@@ -171,8 +183,9 @@ export class BrowserSession {
    * 换账号时会出现「登录了新账号，实际还是旧身份」的鬼打墙。
    */
   async clearSession() {
+    const file = currentSessionFile(this.phone);
     try {
-      if (existsSync(SESSION_FILE)) unlinkSync(SESSION_FILE);
+      if (existsSync(file)) unlinkSync(file);
     } catch {
       /* 文件不存在或删不掉都继续 */
     }
@@ -191,10 +204,11 @@ export class BrowserSession {
     if (this.browser) return null; // 临时模式不覆盖主快照
     try {
       const state = await this.context.storageState();
-      const payload = { cookies: state.cookies ?? [], savedAt: Date.now() };
-      writeFileSync(SESSION_FILE, JSON.stringify(payload), 'utf8');
-      log.info(`登录态快照已保存（${payload.cookies.length} 条 cookie）`);
-      return SESSION_FILE;
+      const payload = { cookies: state.cookies ?? [], savedAt: Date.now(), phone: this.phone || '' };
+      const file = currentSessionFile(this.phone);
+      writeFileSync(file, JSON.stringify(payload), 'utf8');
+      log.info(`登录态快照已保存（${payload.cookies.length} 条 cookie → ${file.split('/').pop()}）`);
+      return file;
     } catch (err) {
       log.warn(`登录态快照保存失败：${err.message}`);
       return null;
@@ -317,6 +331,42 @@ export class BrowserSession {
   }
 
   /**
+   * 读当前登录账号的档案（姓名 / 学校 / uid / 头像）。
+   *
+   * 学习通个人空间把昵称放在 `.user-name`，学校名是首屏第一段文字，
+   * uid 在 `_uid` cookie 里，头像走 `photo.chaoxing.com/p/<uid>_80`。
+   */
+  async fetchUserInfo() {
+    if (!this.page) return null;
+    const page = this.page;
+    try {
+      await page
+        .goto('https://i.chaoxing.com/', { waitUntil: 'domcontentloaded', timeout: 40_000 })
+        .catch(() => {});
+      await page.waitForTimeout(4500);
+      return await page.evaluate(() => {
+        const name =
+          document.querySelector('.user-name')?.textContent?.trim() ||
+          document.querySelector('[class*=userName]')?.textContent?.trim() ||
+          '';
+        const text = (document.body.innerText || '').replace(/\s+/g, ' ').trim();
+        // 首屏第一段一般是学校名
+        const school = text.split(/\s{1,}/)[0] || '';
+        const uidM = document.cookie.match(/_uid=(\d+)/);
+        const avatarEl = document.querySelector('.head-img') || document.querySelector('.icon-head');
+        return {
+          name: String(name).slice(0, 30),
+          school: String(school).slice(0, 40),
+          uid: uidM ? uidM[1] : '',
+          avatar: avatarEl?.getAttribute('src') || '',
+        };
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 账号密码自动登录（实测可行：登录页就是 `#phone` + `#pwd` + `#loginBtn`，
    * 初始状态**没有图形验证码**，协议也无需勾选）。
    *
@@ -328,6 +378,7 @@ export class BrowserSession {
     const page = this.page;
 
     // 先清旧账号残留，再从干净状态登录
+    this.phone = String(phone || this.phone || '');
     await this.clearSession();
 
     await this.goto(LOGIN_URL);
@@ -357,7 +408,8 @@ export class BrowserSession {
         // 再等一拍，让会话稳定后导出（session cookie 必须显式存）
         await page.waitForTimeout(900);
         await this.saveSession();
-        return { ok: true };
+        const user = await this.fetchUserInfo();
+        return { ok: true, user };
       }
 
       const errText = await page
@@ -412,6 +464,7 @@ export class BrowserSession {
     if (!this.page) throw new Error('浏览器未启动');
     const page = this.page;
 
+    this.phone = String(phone || this.phone || '');
     await this.clearSession();
 
     await this.goto(SMS_LOGIN_URL);
@@ -477,7 +530,8 @@ export class BrowserSession {
       if (await this.isLoggedIn()) {
         await page.waitForTimeout(900);
         await this.saveSession();
-        return { ok: true };
+        const user = await this.fetchUserInfo();
+        return { ok: true, user };
       }
 
       const errText = await page

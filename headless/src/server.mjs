@@ -23,6 +23,7 @@ import { writeReport } from './report.mjs';
 import { createLogger, getRing, startFileLog } from './logger.mjs';
 import { applyPatch, publicConfig, saveEnv } from './config.mjs';
 import { allFeedback, feedbackOf } from './feedback.mjs';
+import { activeAccount, allAccounts, clearAccount, getAccount, publicAccount, removeAccount, saveAccount, setActiveAccount, upsertAccount } from './account.mjs';
 
 const log = createLogger('server');
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -127,11 +128,23 @@ async function closeSmsLogin() {
 }
 
 /**
- * 串行执行一批 AI 实践任务；每个任务独立开浏览器，失败不影响后续。
+ * 账号级并发调度器。
+ *
+ * 规则（按需求）：
+ * - **同一账号内部严格串行** —— 一个账号同时只跑一个任务，避免自己跟自己抢输入框；
+ * - **最多 N 个账号并行**（默认 3）—— 不同账号各开各的浏览器，互不干扰；
+ * - 其余任务排队，前面完成一个就补一个。
+ *
+ * 为什么必须用临时浏览器：persistent profile 同一时间只能被一个实例占用，
+ * 想并行只能每个账号一个独立 context，登录态从 `.sessions/<phone>.json` 导入。
+ *
+ * @param {object} config
+ * @param {Array<{phone?: string, stuUrl: string, title: string, requirement?: number}>} tasks
+ * @param {number} concurrency 同时运行的账号数上限
  */
-async function runTasks(config, tasks) {
+async function runTasks(config, tasks, concurrency = 3) {
   runtime.running = true;
-  runtime.phase = 'running';
+  runtime.phase = 'queue';
   runtime.round = 0;
   runtime.limit = tasks.length;
   runtime.startedAt = Date.now();
@@ -139,150 +152,108 @@ async function runTasks(config, tasks) {
   runtime.events = [];
   runtime.abort = new AbortController();
 
+  const signal = runtime.abort.signal;
   const llm = new LlmClient(config);
-  const results = [];
 
-  try {
-    for (let i = 0; i < tasks.length; i += 1) {
-      const task = tasks[i];
-      if (runtime.abort.signal.aborted) break;
-      runtime.round = i;
-      pushEvent({ type: 'status', phase: 'task-start', round: i, limit: tasks.length, message: task.title });
-
-      const session = new BrowserSession(config);
-      try {
-        await session.launch({ headless: true });
-        const report = await runAiTask({ session, config, llm, task, signal: runtime.abort.signal, onEvent: pushEvent });
-        results.push(report);
-        pushEvent({ type: 'task-done', round: i + 1, limit: tasks.length, report });
-      } catch (err) {
-        results.push({ title: task.title, stoppedBy: 'ERROR', error: err?.message ?? String(err) });
-        pushEvent({ type: 'error', message: task.title + '：' + (err?.message ?? err) });
-      } finally {
-        await session.close();
-      }
-    }
-  } finally {
-    runtime.running = false;
-    runtime.phase = runtime.abort?.signal.aborted ? 'idle' : 'done';
-    runtime.lastReport = { tasks: results, usage: llm.usage };
-    pushEvent({ type: 'done', report: { tasks: results, totalRounds: results.length, stoppedBy: 'ALL_DONE' } });
+  // 按账号分组；无 phone 的归到当前激活账号
+  const fallbackPhone = activeAccount()?.phone || '';
+  const groups = new Map();
+  for (const t of tasks) {
+    const phone = t.phone || fallbackPhone;
+    if (!groups.has(phone)) groups.set(phone, { phone, queue: [], done: 0, running: false });
+    groups.get(phone).queue.push(t);
   }
-}
 
-/**
- * 批量刷多门课程：逐课扫描 AI 实践任务，跳过已达标的，跑没做的。
- *
- * 每门课开一次浏览器（课程列表 + 任务抓取需要同一会话），
- * 每个任务再单独开会话执行 —— 避免单会话过长导致内存膨胀。
- */
-async function runCourses(config, courses) {
-  runtime.running = true;
-  runtime.phase = 'running';
-  runtime.round = 0;
-  runtime.limit = 0;
-  runtime.startedAt = Date.now();
-  runtime.error = null;
-  runtime.events = [];
-  runtime.abort = new AbortController();
+  const results = [];
+  log.info(`队列启动：${tasks.length} 个任务 / ${groups.size} 个账号，并发上限 ${concurrency}`);
 
-  const llm = new LlmClient(config);
-  const summary = [];
+  /** 单个任务执行（用指定账号的临时浏览器）。 */
+  const runOne = async (task, phone) => {
+    if (signal.aborted) return;
+    pushEvent({
+      type: 'status', phase: 'task-start',
+      round: runtime.round, limit: runtime.limit,
+      message: `${task.title}${phone ? ' · ' + phone.slice(-4) : ''}`,
+    });
+
+    const session = new BrowserSession(config, { phone });
+    const llmOne = new LlmClient(config);
+    try {
+      await session.launch({ headless: true, ephemeral: true });
+      const report = await runAiTask({
+        session, config, llm: llmOne, task,
+        signal,
+        onEvent: pushEvent,
+      });
+      report.phone = phone;
+      results.push(report);
+      runtime.round += 1;
+      pushEvent({ type: 'task-done', round: runtime.round, limit: runtime.limit, report });
+      // 累计用量
+      llm.usage.calls += llmOne.usage.calls;
+      llm.usage.promptTokens += llmOne.usage.promptTokens;
+      llm.usage.completionTokens += llmOne.usage.completionTokens;
+    } catch (err) {
+      results.push({ title: task.title, phone, stoppedBy: 'ERROR', error: err?.message ?? String(err) });
+      runtime.round += 1;
+      pushEvent({ type: 'error', message: `${task.title}：${err?.message ?? err}` });
+    } finally {
+      await session.close();
+    }
+  };
+
+  /** 一个账号的串行 worker。 */
+  const runAccount = async (group) => {
+    for (const task of group.queue) {
+      if (signal.aborted) break;
+      await runOne(task, group.phone);
+      group.done += 1;
+    }
+  };
 
   try {
-    for (let ci = 0; ci < courses.length; ci += 1) {
-      const course = courses[ci];
-      if (runtime.abort.signal.aborted) break;
+    const active = new Map(); // phone -> Promise
+    for (;;) {
+      if (signal.aborted) break;
 
-      pushEvent({
-        type: 'status', phase: 'course-scan',
-        round: ci, limit: courses.length,
-        message: `扫描课程：${course.title || course.href.slice(0, 40)}`,
-      });
-
-      /* ---- 扫这门课的任务 ---- */
-      let tasks = [];
-      const scanSession = new BrowserSession(config);
-      try {
-        await scanSession.launch({ headless: true, ephemeral: true });
-        tasks = await scanSession.listAiTasks(course.href);
-        log.info(`${course.title}：${tasks.length} 个 AI 实践任务`);
-      } catch (err) {
-        pushEvent({ type: 'error', message: `${course.title} 扫描失败：${err.message}` });
-        summary.push({ course: course.title, error: err.message, done: 0, skipped: 0 });
-        continue;
-      } finally {
-        await scanSession.close();
-      }
-
-      const todo = [];
-      let skipped = 0;
-
-      /* ---- 查分数，筛出没达标的 ---- */
-      for (let i = 0; i < tasks.length; i += 1) {
-        if (runtime.abort.signal.aborted) break;
-        const t = tasks[i];
-        if (!t.stuUrl) continue;
-
-        pushEvent({
-          type: 'status', phase: 'skill-scan',
-          round: i + 1, limit: tasks.length,
-          message: `${course.title} · ${t.title}`,
+      // 补位：还有账号没跑且有任务
+      while (active.size < concurrency) {
+        const next = [...groups.values()].find(
+          (g) => g.done < g.queue.length && !active.has(g.phone),
+        );
+        if (!next) break;
+        const p = runAccount(next).finally(() => {
+          active.delete(next.phone);
         });
-
-        const probe = new BrowserSession(config);
-        try {
-          await probe.launch({ headless: true, ephemeral: true });
-          const info = await probe.aiTaskInfo(t.stuUrl);
-          t.score = info.score;
-          t.attempts = info.attempts;
-          t.requirement = info.requirement;
-          const reached = info.score !== null && info.score >= (info.requirement || 80);
-          if (reached) {
-            skipped += 1;
-            log.info(`跳过（${info.score} 分达标）：${t.title}`);
-          } else {
-            todo.push(t);
-          }
-        } catch (err) {
-          t.probeError = err.message;
-          todo.push(t);
-        } finally {
-          await probe.close();
-        }
+        active.set(next.phone, p);
       }
 
-      /* ---- 逐条执行 ---- */
-      runtime.limit += todo.length;
-      let done = 0;
-      for (const t of todo) {
-        if (runtime.abort.signal.aborted) break;
-        const runSession = new BrowserSession(config);
-        try {
-          await runSession.launch({ headless: true });
-          const report = await runAiTask({
-            session: runSession, config, llm,
-            task: { ...t, requirement: t.requirement || 80 },
-            signal: runtime.abort.signal,
-            onEvent: pushEvent,
-          });
-          done += 1;
-          runtime.round += 1;
-          pushEvent({ type: 'task-done', round: runtime.round, limit: runtime.limit, report });
-        } catch (err) {
-          pushEvent({ type: 'error', message: `${t.title}：${err.message}` });
-        } finally {
-          await runSession.close();
-        }
-      }
-
-      summary.push({ course: course.title, tasks: tasks.length, done, skipped });
+      if (!active.size) break;
+      await Promise.race([...active.values()]);
     }
+    await Promise.allSettled([...active.values()]);
   } finally {
     runtime.running = false;
-    runtime.phase = runtime.abort?.signal.aborted ? 'idle' : 'done';
-    runtime.lastReport = { summary, usage: llm.usage };
-    pushEvent({ type: 'done', report: { summary, totalRounds: runtime.round, stoppedBy: 'ALL_DONE' } });
+    runtime.phase = signal.aborted ? 'idle' : 'done';
+    runtime.lastReport = {
+      tasks: results,
+      usage: llm.usage,
+      accounts: [...groups.values()].map((g) => ({
+        phone: g.phone ? g.phone.slice(-4) : '',
+        total: g.queue.length,
+        done: g.done,
+      })),
+    };
+    pushEvent({
+      type: 'done',
+      report: {
+        tasks: results,
+        totalRounds: results.length,
+        stoppedBy: signal.aborted ? 'ABORTED' : 'ALL_DONE',
+        accounts: runtime.lastReport.accounts,
+      },
+    });
+    log.info(`队列结束：完成 ${results.length}/${tasks.length}`);
   }
 }
 
@@ -377,6 +348,7 @@ export async function startServer({ config, port = 5173 }) {
           },
           loggedIn: runtime.loggedIn,
           loggedInAt: runtime.loggedInAt,
+          account: publicAccount(),
           checkpoints: state.data,
           events: runtime.events.slice(-40),
         });
@@ -511,18 +483,91 @@ export async function startServer({ config, port = 5173 }) {
         const body = await readBody(req);
         if (!body.stuUrl) return json(res, { ok: false, error: '缺少任务链接' }, 400);
         if (runtime.running) return json(res, { ok: false, error: '已有任务在跑' }, 409);
-        runTasks(config, [{ stuUrl: body.stuUrl, title: body.title || '任务', requirement: body.requirement }]).catch(() => {});
+        runTasks(config, [{
+          stuUrl: body.stuUrl,
+          title: body.title || '任务',
+          requirement: body.requirement,
+          phone: body.phone || '',
+        }]).catch(() => {});
         return json(res, { ok: true, started: true });
       }
 
       /* ---------- 批量跑所有未达标任务 ---------- */
       if (url.pathname === '/api/run-todo' && req.method === 'POST') {
         const body = await readBody(req);
-        const tasks = Array.isArray(body.tasks) ? body.tasks : [];
+        const tasks = (Array.isArray(body.tasks) ? body.tasks : []).map((t) => ({
+          ...t,
+          phone: t.phone || body.phone || '',
+        }));
         if (!tasks.length) return json(res, { ok: false, error: '没有待做的任务' }, 400);
         if (runtime.running) return json(res, { ok: false, error: '已有任务在跑' }, 409);
         runTasks(config, tasks).catch(() => {});
         return json(res, { ok: true, started: true, count: tasks.length });
+      }
+
+      /* ---------- 账号池 ---------- */
+      if (url.pathname === '/api/accounts') {
+        return json(res, { ok: true, ...allAccounts(), model: config.model });
+      }
+
+      if (url.pathname === '/api/accounts/switch' && req.method === 'POST') {
+        const body = await readBody(req);
+        try {
+          setActiveAccount(body.phone);
+          // 切号后清掉运行态里的登录标记，避免 UI 显示旧账号
+          runtime.loggedIn = null;
+          runtime.loggedInAt = null;
+          return json(res, { ok: true, account: publicAccount() });
+        } catch (err) {
+          return json(res, { ok: false, error: err.message }, 200);
+        }
+      }
+
+      if (url.pathname === '/api/accounts/delete' && req.method === 'POST') {
+        const body = await readBody(req);
+        removeAccount(body.phone);
+        return json(res, { ok: true, ...allAccounts() });
+      }
+
+      /* ---------- 账号档案 ---------- */
+      if (url.pathname === '/api/account') {
+        return json(res, { ok: true, account: publicAccount() });
+      }
+
+      if (url.pathname === '/api/account/refresh' && req.method === 'POST') {
+        const session = new BrowserSession(config);
+        try {
+          await session.launch({ headless: true, ephemeral: true });
+          const user = await session.fetchUserInfo();
+          if (!user || (!user.name && !user.uid)) {
+            return json(res, { ok: false, error: '没取到账号信息，可能登录已失效' }, 200);
+          }
+          const acc = saveAccount({ ...user, phone: config.phone });
+          runtime.loggedIn = true;
+          runtime.loggedInAt = Date.now();
+          return json(res, { ok: true, account: publicAccount(), raw: acc.name });
+        } catch (err) {
+          return json(res, { ok: false, error: err?.message ?? String(err) }, 200);
+        } finally {
+          await session.close();
+        }
+      }
+
+      if (url.pathname === '/api/logout' && req.method === 'POST') {
+        const session = new BrowserSession(config);
+        try {
+          await session.launch({ headless: true });
+          await session.clearSession();
+          clearAccount();
+          runtime.loggedIn = false;
+          runtime.loggedInAt = Date.now();
+          log.info('已登出并清除登录态');
+          return json(res, { ok: true });
+        } catch (err) {
+          return json(res, { ok: false, error: err?.message ?? String(err) }, 200);
+        } finally {
+          await session.close();
+        }
       }
 
       /* ---------- 评分反馈学习库 ---------- */
@@ -532,10 +577,29 @@ export async function startServer({ config, port = 5173 }) {
         return json(res, { ok: true, items: allFeedback() });
       }
 
+      /* ---------- 多账号任务队列（排队刷） ---------- */
+      if (url.pathname === '/api/run-queue' && req.method === 'POST') {
+        const body = await readBody(req);
+        const items = Array.isArray(body.items) ? body.items : [];
+        const flat = [];
+        for (const it of items) {
+          const phone = it.phone || '';
+          for (const t of it.tasks || []) {
+            if (t?.stuUrl) flat.push({ ...t, phone });
+          }
+        }
+        if (!flat.length) return json(res, { ok: false, error: '队列为空' }, 400);
+        if (runtime.running) return json(res, { ok: false, error: '已有任务在跑' }, 409);
+        runTasks(config, flat).catch(() => {});
+        return json(res, { ok: true, started: true, count: flat.length, accounts: items.length });
+      }
+
       /* ---------- 批量刷多门课程 ---------- */
       if (url.pathname === '/api/run-courses' && req.method === 'POST') {
         const body = await readBody(req);
-        const courses = Array.isArray(body.courses) ? body.courses.filter((c) => c && c.href) : [];
+        const courses = (Array.isArray(body.courses) ? body.courses : [])
+          .filter((c) => c && c.href)
+          .map((c) => ({ ...c, phone: c.phone || body.phone || '' }));
         if (!courses.length) return json(res, { ok: false, error: '没有选中课程' }, 400);
         if (runtime.running) return json(res, { ok: false, error: '已有任务在跑' }, 409);
         runCourses(config, courses).catch(() => {});
@@ -613,7 +677,15 @@ export async function startServer({ config, port = 5173 }) {
           const result = await session.loginWithPassword({ phone, password });
           runtime.loggedIn = result.ok;
           runtime.loggedInAt = Date.now();
-          if (result.ok) log.info('Web 端登录成功');
+          if (result.ok) {
+            upsertAccount({
+              phone,
+              password: body.remember ? password : undefined,
+              ...(result.user || {}),
+            });
+            setActiveAccount(phone);
+            log.info(`Web 端登录成功：${result.user?.name || phone}`);
+          }
           else log.warn(`Web 端登录失败：${result.reason}`);
           return json(res, { ...result, loggedIn: result.ok });
         } catch (err) {
@@ -686,6 +758,7 @@ export async function startServer({ config, port = 5173 }) {
           runtime.loggedInAt = Date.now();
 
           if (result.ok) {
+            if (result.user) saveAccount({ ...result.user, phone: smsLogin.phone });
             if (body.remember) {
               applyPatch(config, { phone: smsLogin.phone });
               saveEnv({ CXAI_PHONE: smsLogin.phone });

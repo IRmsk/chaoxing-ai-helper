@@ -65,6 +65,13 @@
   .ev:last-child{border:0}
   .ev .t{color:#5b6478;margin-right:6px;font-variant-numeric:tabular-nums}
   .muted{color:var(--muted)}
+  .account-bar{display:flex;align-items:center;gap:10px;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px}
+  .acc-avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;
+    background:#0b0e13;flex:0 0 40px;border:1px solid var(--line)}
+  .acc-info{flex:1;min-width:0}
+  .acc-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acc-meta{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chk{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin-top:10px}
   .chk input{width:auto}
   .seg{display:flex;gap:5px;background:#0b0e13;border:1px solid var(--line);
@@ -86,6 +93,18 @@
   .ai-row{display:flex;align-items:center;gap:9px;padding:10px 11px;border-radius:10px;
     background:#0b0e13;border:1px solid var(--line);margin-bottom:7px}
   .ai-row.done{opacity:.55}
+  .acc-row{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;
+    background:#0b0e13;border:1px solid var(--line);margin-bottom:7px}
+  .acc-row.active{border-color:var(--accent);background:#101a2b}
+  .acc-row .acc-avatar{width:32px;height:32px;flex:0 0 32px}
+  .acc-row .ar-main{flex:1;min-width:0}
+  .acc-row .ar-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acc-row .ar-meta{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .basket{background:var(--card);border:1px solid #2f4a6e;border-radius:12px;
+    padding:10px 12px;margin-bottom:11px;display:flex;align-items:center;gap:9px}
+  .bk-main{flex:1;min-width:0}
+  .bk-title{font-size:12.5px;font-weight:600}
+  .bk-list{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
   .ai-row .task-check{width:17px;height:17px;flex:0 0 17px;accent-color:var(--accent)}
   .ai-row .task-check-ph{width:17px;flex:0 0 17px}
   .ai-main{flex:1;min-width:0}
@@ -101,11 +120,30 @@
   <h1>学习通 AI 实践 · 控制台</h1>
   <div class="sub">无头运行 · 不打开学习通页面也能跑完对话</div>
 
+  <div class="account-bar" id="accountBar" hidden>
+    <img class="acc-avatar" id="accAvatar" alt="" referrerpolicy="no-referrer">
+    <div class="acc-info">
+      <div class="acc-name" id="accName">-</div>
+      <div class="acc-meta" id="accMeta">-</div>
+    </div>
+    <button class="sm" id="btnRefreshAcc">刷新</button>
+    <button class="sm danger" id="btnLogout">登出</button>
+  </div>
+
   <div class="tabs">
     <div class="tab on" data-tab="api">① 接口</div>
     <div class="tab" data-tab="cx">② 登录</div>
     <div class="tab" data-tab="courses">③ 课程</div>
     <div class="tab" data-tab="run">④ 任务</div>
+  </div>
+
+  <div class="basket" id="basket" hidden>
+    <div class="bk-main">
+      <div class="bk-title"><span id="bkCount">0</span> 个任务 · <span id="bkAccs">0</span> 个账号</div>
+      <div class="bk-list" id="bkList"></div>
+    </div>
+    <button class="sm primary" id="btnQueueRun">队列执行</button>
+    <button class="sm" id="btnBasketClear">清空</button>
   </div>
 
   <!-- ============ 接口 ============ -->
@@ -129,7 +167,16 @@
   <!-- ============ 学习通 ============ -->
   <div class="pane" id="pane-cx">
     <div class="card">
-      <h2>登录 <span class="hint">无头提交，不弹浏览器</span></h2>
+      <div class="row" style="margin-bottom:10px">
+        <h2 style="margin:0">账号池</h2>
+        <span class="grow"></span>
+        <button class="sm" id="btnReloadAccounts">刷新</button>
+      </div>
+      <div id="accountList"><span class="muted" style="font-size:12.5px">加载中…</span></div>
+    </div>
+
+    <div class="card">
+      <h2>登录 <span class="hint">登录成功会自动加入账号池</span></h2>
 
       <div class="seg">
         <button class="on" data-mode="pwd">密码登录</button>
@@ -348,9 +395,10 @@ $('btnLogin').onclick = async () => {
   try {
     const r = await post('/api/login', { phone, password, remember: $('cRemember').checked });
     if (r.ok) {
-      showMsg($('loginMsg'), '✓ 登录成功，登录态已保存', 'ok');
+      showMsg($('loginMsg'), '✓ 登录成功，账号已加入账号池', 'ok');
       $('cPassword').value = '';
       setLoginPill(true);
+      loadAccounts();
     } else {
       showMsg($('loginMsg'), '✗ ' + (r.reason || r.error) + (r.hint ? '\n' + r.hint : ''), 'err');
       setLoginPill(false);
@@ -602,7 +650,14 @@ function renderAiTasks(course) {
     if (btn) btn.disabled = n === 0;
   };
 
-  document.querySelectorAll('.task-check').forEach(cb => { cb.onchange = updateCount; });
+  document.querySelectorAll('.task-check').forEach(cb => {
+    cb.onchange = () => {
+      updateCount();
+      const t = aiTasks[Number(cb.dataset.i)];
+      const phone = accountPool.activePhone || '';
+      if (t) toggleBasket(t, phone, cb.checked);
+    };
+  });
 
   document.querySelectorAll('.ai-run').forEach(btn => {
     btn.onclick = () => {
@@ -618,6 +673,10 @@ function renderAiTasks(course) {
       const allOn = boxes.every(b => b.checked);
       boxes.forEach(b => { b.checked = !allOn; });
       updateCount();
+      boxes.forEach(b => {
+        const t = aiTasks[Number(b.dataset.i)];
+        if (t) toggleBasket(t, accountPool.activePhone || '', b.checked);
+      });
     };
   }
 
@@ -776,11 +835,18 @@ function renderEvents(events) {
     else if (e.type === 'round') body = `第 ${e.round} 轮完成 · 作答 ${(e.answer||'').length} 字 · 回复 ${(e.reply||'').length} 字`;
     else if (e.type === 'task-done') {
       const r = e.report || {};
-      const before = r.scoreBefore === null || r.scoreBefore === undefined ? '未做' : r.scoreBefore;
-      const after = r.scoreAfter === null || r.scoreAfter === undefined ? '?' : r.scoreAfter;
-      const ok = r.scoreAfter >= (r.requirement || 80);
-      body = `${r.title || '任务'} · ${before} → <b style="color:${ok ? '#34d399' : '#fbbf24'}">${after} 分</b>` +
-             (ok ? ' ✓ 达标' : '') + (r.error ? ` · ${r.error}` : '');
+      const req = r.requirement || 80;
+      const before = r.scoreBefore === null || r.scoreBefore === undefined ? '未做' : r.scoreBefore + ' 分';
+      if (r.stoppedBy === 'ALREADY_DONE') {
+        body = `${r.title || '任务'} · <b style="color:#34d399">${before}</b> 已达标（≥${req}），跳过`;
+      } else if (r.stoppedBy === 'ERROR' || r.error) {
+        body = `${r.title || '任务'} · <b style="color:#f87171">失败</b>：${r.error || ''}`;
+      } else {
+        const after = r.scoreAfter === null || r.scoreAfter === undefined ? '?' : r.scoreAfter;
+        const ok = r.scoreAfter >= req;
+        body = `${r.title || '任务'} · ${before} → <b style="color:${ok ? '#34d399' : '#fbbf24'}">${after} 分</b>` +
+               (ok ? ' ✓ 达标' : ' ✗ 未达标');
+      }
     }
     else if (e.type === 'done') body = `全部结束 · ${e.report?.stoppedBy || ''}`;
     else if (e.type === 'error') body = e.message;
@@ -788,6 +854,162 @@ function renderEvents(events) {
     return `<div class="ev"><span class="t">${t}</span>${body}</div>`;
   }).join('');
 }
+
+function renderAccount(acc, loggedIn) {
+  const bar = $('accountBar');
+  if (!bar) return;
+  if (!acc || (!acc.name && !acc.uid)) {
+    bar.hidden = loggedIn !== true ? true : false;
+    if (loggedIn === true) {
+      $('accName').textContent = '已登录（未取到档案）';
+      $('accMeta').textContent = '点「刷新」拉取账号信息';
+      $('accAvatar').removeAttribute('src');
+    }
+    return;
+  }
+  bar.hidden = false;
+  $('accName').textContent = acc.name || acc.uid || '未知账号';
+  const parts = [];
+  if (acc.school) parts.push(acc.school);
+  if (acc.uid) parts.push('uid ' + acc.uid);
+  if (acc.phoneMasked) parts.push(acc.phoneMasked);
+  $('accMeta').textContent = parts.join(' · ') || '—';
+  const img = $('accAvatar');
+  if (acc.avatar) img.src = acc.avatar;
+  else img.removeAttribute('src');
+}
+
+$('btnRefreshAcc').onclick = async () => {
+  const b = $('btnRefreshAcc');
+  b.disabled = true;
+  try {
+    const r = await post('/api/account/refresh', {});
+    if (r.ok) showMsg($('loginMsg'), '✓ 账号信息已更新', 'ok');
+    else showMsg($('loginMsg'), '✗ ' + r.error, 'err');
+  } finally {
+    b.disabled = false;
+    refresh();
+  }
+};
+
+$('btnLogout').onclick = async () => {
+  if (!confirm('确定登出？会清除本机保存的登录态与账号档案。')) return;
+  await post('/api/logout', {});
+  $('accountBar').hidden = true;
+  setLoginPill(false);
+  refresh();
+};
+
+let accountPool = { accounts: [], activePhone: '' };
+/** 跨账号任务篮：{ phone, title, stuUrl, requirement } */
+let basket = [];
+
+function basketKey(t) { return (t.phone || '') + '|' + t.stuUrl; }
+
+function toggleBasket(task, phone, checked) {
+  const item = { phone, title: task.title, stuUrl: task.stuUrl, requirement: task.requirement };
+  const key = basketKey(item);
+  basket = basket.filter(x => basketKey(x) !== key);
+  if (checked) basket.push(item);
+  renderBasket();
+}
+
+function renderBasket() {
+  const bar = $('basket');
+  if (!bar) return;
+  if (!basket.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const phones = new Set(basket.map(x => x.phone));
+  $('bkCount').textContent = basket.length;
+  $('bkAccs').textContent = phones.size;
+  $('bkList').textContent = basket.map(x =>
+    `${x.title}${phones.size > 1 ? ' (' + String(x.phone).slice(-4) + ')' : ''}`).join(' · ');
+}
+
+$('btnBasketClear').onclick = () => {
+  basket = [];
+  document.querySelectorAll('.task-check:checked').forEach(cb => { cb.checked = false; cb.dispatchEvent(new Event('change')); });
+  renderBasket();
+};
+
+$('btnQueueRun').onclick = async () => {
+  if (!basket.length) return;
+  const byPhone = new Map();
+  for (const t of basket) {
+    if (!byPhone.has(t.phone)) byPhone.set(t.phone, []);
+    byPhone.get(t.phone).push({ stuUrl: t.stuUrl, title: t.title, requirement: t.requirement });
+  }
+  const desc = [...byPhone.entries()]
+    .map(([p, ts]) => `${String(p).slice(-4)}：${ts.length} 个`)
+    .join('\n');
+  if (!confirm(`队列执行（最多 3 个账号并行，账号内串行）：\n\n${desc}\n\n共 ${basket.length} 个任务。继续？`)) return;
+
+  const r = await post('/api/run-queue', {
+    items: [...byPhone.entries()].map(([phone, ts]) => ({ phone, tasks: ts })),
+  });
+  if (r.ok) {
+    showMsg($('courseMsg'), `✓ 队列已启动：${r.count} 个任务 / ${r.accounts} 个账号`, 'ok');
+    basket = [];
+    renderBasket();
+    document.querySelectorAll('.task-check:checked').forEach(cb => { cb.checked = false; });
+  } else {
+    showMsg($('courseMsg'), '✗ ' + r.error, 'err');
+  }
+};
+
+async function loadAccounts() {
+  try {
+    const d = await api('/api/accounts');
+    accountPool = d;
+    renderAccounts();
+  } catch (e) {
+    const el = $('accountList');
+    if (el) el.innerHTML = `<span class="muted" style="font-size:12.5px">加载失败：${escapeHtml(e.message)}</span>`;
+  }
+}
+
+function renderAccounts() {
+  const el = $('accountList');
+  if (!el) return;
+  const list = accountPool.accounts || [];
+  if (!list.length) {
+    el.innerHTML = '<span class="muted" style="font-size:12.5px">还没有账号，在下面登录一个就会自动加入</span>';
+    return;
+  }
+  el.innerHTML = list.map(a => `
+    <div class="acc-row ${a.active ? 'active' : ''}" data-phone="${escapeHtml(a.phone)}">
+      ${a.avatar ? `<img class="acc-avatar" src="${escapeHtml(a.avatar)}" referrerpolicy="no-referrer">` : '<span class="acc-avatar"></span>'}
+      <div class="ar-main">
+        <div class="ar-name">${escapeHtml(a.name || a.phoneMasked)}${a.active ? ' · 当前' : ''}</div>
+        <div class="ar-meta">${escapeHtml([a.school, a.phoneMasked, a.hasSession ? '已登录' : '无登录态'].filter(Boolean).join(' · '))}</div>
+      </div>
+      ${a.active ? '' : `<button class="sm acc-switch">切换</button>`}
+      <button class="sm danger acc-del">删</button>
+    </div>`).join('');
+
+  el.querySelectorAll('.acc-switch').forEach(btn => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const phone = btn.closest('.acc-row').dataset.phone;
+      const r = await post('/api/accounts/switch', { phone });
+      if (r.ok) { await loadAccounts(); refresh(); }
+      else showMsg($('loginMsg'), '✗ ' + r.error, 'err');
+    };
+  });
+
+  el.querySelectorAll('.acc-del').forEach(btn => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const phone = btn.closest('.acc-row').dataset.phone;
+      if (!confirm('删除这个账号？会连带清掉它的登录态。')) return;
+      await post('/api/accounts/delete', { phone });
+      await loadAccounts();
+      refresh();
+    };
+  });
+}
+
+$('btnReloadAccounts').onclick = () => loadAccounts();
 
 async function refresh() {
   try {
@@ -812,6 +1034,7 @@ async function refresh() {
     $('btnStop').disabled = !r.running;
 
     if (s.loggedIn !== null) setLoginPill(s.loggedIn);
+    renderAccount(s.account, s.loggedIn);
     renderEvents(s.events);
 
     // 有任务完成 → 按标题把最新分数直接写回那一行（不重载列表）
@@ -845,6 +1068,7 @@ async function refresh() {
 }
 
 loadConfig().catch(()=>{});
+loadAccounts();
 refresh();
 setInterval(refresh, 2000);
 </script>
