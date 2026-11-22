@@ -567,6 +567,88 @@ export async function startServer({ config, port = 5173 }) {
         return json(res, { ok: true, scores: allScores() });
       }
 
+      /* ---------- 章节目录 ---------- */
+      if (url.pathname === '/api/chapters' && req.method === 'POST') {
+        const body = await readBody(req);
+        if (!body.courseHref) return json(res, { ok: false, error: '缺少课程链接' }, 400);
+
+        const cacheKey = 'chapters:' + body.courseHref;
+        if (!body.refresh) {
+          const hit = readCache('tasks', cacheKey, TTL.courses);
+          if (hit) return json(res, { ok: true, chapters: hit.data, cached: true, ageMs: hit.ageMs });
+        }
+
+        const session = new BrowserSession(config, { phone: activeAccount()?.phone });
+        try {
+          await session.launch({ headless: true, ephemeral: true });
+          const { listChapters } = await import('./course.mjs');
+          const chapters = await listChapters(session, body.courseHref);
+          writeCache('tasks', cacheKey, chapters);
+          log.info(`抓到 ${chapters.length} 个章节`);
+          return json(res, { ok: true, chapters, cached: false });
+        } catch (err) {
+          return json(res, { ok: false, error: err?.message ?? String(err) }, 200);
+        } finally {
+          await session.close();
+        }
+      }
+
+      /* ---------- 刷课（单节 / 批量） ---------- */
+      if (url.pathname === '/api/study' && req.method === 'POST') {
+        const body = await readBody(req);
+        const chapters = Array.isArray(body.chapters) ? body.chapters : [];
+        if (!chapters.length) return json(res, { ok: false, error: '没有要学的章节' }, 400);
+        if (runtime.running) return json(res, { ok: false, error: '已有任务在跑' }, 409);
+
+        const rate = Math.min(2, Math.max(1, Number(body.rate) || 1.5));
+        const limit = Math.min(50, Math.max(1, Number(body.limit) || chapters.length));
+
+        runtime.running = true;
+        runtime.phase = 'study';
+        runtime.round = 0;
+        runtime.limit = Math.min(chapters.length, limit);
+        runtime.startedAt = Date.now();
+        runtime.events = [];
+        runtime.abort = new AbortController();
+
+        (async () => {
+          const session = new BrowserSession(config, { phone: activeAccount()?.phone });
+          const results = [];
+          try {
+            await session.launch({ headless: true, ephemeral: true });
+            const { studyChapter } = await import('./course.mjs');
+            for (let i = 0; i < Math.min(chapters.length, limit); i += 1) {
+              if (runtime.abort.signal.aborted) break;
+              const ch = chapters[i];
+              pushEvent({ type: 'status', phase: 'chapter-open', round: i + 1, limit: runtime.limit, message: ch.title });
+              try {
+                const r = await studyChapter(session, ch, {
+                  rate,
+                  docSeconds: Number(body.docSeconds) || 20,
+                  onEvent: pushEvent,
+                  signal: runtime.abort.signal,
+                });
+                results.push(r);
+                runtime.round += 1;
+                pushEvent({ type: 'chapter-done', round: i + 1, report: r });
+              } catch (err) {
+                results.push({ title: ch.title, error: err.message });
+                pushEvent({ type: 'error', message: `${ch.title}：${err.message}` });
+              }
+            }
+          } catch (err) {
+            pushEvent({ type: 'error', message: err.message });
+          } finally {
+            await session.close();
+            runtime.running = false;
+            runtime.phase = runtime.abort?.signal.aborted ? 'idle' : 'done';
+            pushEvent({ type: 'done', report: { tasks: results, totalRounds: results.length, stoppedBy: 'ALL_DONE' } });
+          }
+        })().catch(() => {});
+
+        return json(res, { ok: true, started: true, count: Math.min(chapters.length, limit), rate });
+      }
+
       /* ---------- 作业列表 ---------- */
       if (url.pathname === '/api/homeworks' && req.method === 'POST') {
         const body = await readBody(req);

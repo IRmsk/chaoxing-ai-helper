@@ -264,11 +264,28 @@
       <div class="row" style="margin-bottom:10px">
         <h2 style="margin:0" id="courseDetailTitle">课程详情</h2>
         <span class="grow"></span>
+        <button class="sm" id="btnStudy">刷课</button>
         <button class="sm" id="btnLoadHw">作业</button>
         <button class="sm" id="btnRefreshTasks">刷新任务</button>
         <button class="sm" id="btnCloseCourse">关闭</button>
       </div>
       <div id="courseDetailBody"></div>
+      <div id="studyPanel" style="display:none;margin-top:12px">
+        <div class="sec-h">刷课</div>
+        <div class="row" style="margin-bottom:9px">
+          <span class="muted" style="font-size:11.5px">倍速</span>
+          <select id="studyRate" style="background:#0b0e13;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px">
+            <option value="1">1x（最安全）</option>
+            <option value="1.5" selected>1.5x</option>
+            <option value="2">2x（有清空风险）</option>
+          </select>
+          <span class="muted" style="font-size:11.5px">文档停留</span>
+          <input id="studyDocSec" type="number" value="20" min="5" max="120" style="width:70px;background:#0b0e13;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px">
+          <span class="muted" style="font-size:11.5px">秒</span>
+        </div>
+        <div id="studyBody"><span class="muted" style="font-size:12.5px">加载章节目录…</span></div>
+      </div>
+
       <div id="hwPanel" style="display:none;margin-top:12px">
         <div class="sec-h">作业</div>
         <div id="hwBody"></div>
@@ -848,6 +865,69 @@ async function runTodo(course, todo) {
 }
 
 $('btnCloseCourse').onclick = () => { $('courseDetailCard').style.display = 'none'; };
+
+$('btnStudy').onclick = async () => {
+  if (!currentCourse) return;
+  const panel = $('studyPanel');
+  panel.style.display = 'block';
+  $('studyBody').innerHTML = '<span class="muted" style="font-size:12.5px">加载章节目录…（约 15 秒）</span>';
+  try {
+    const d = await post('/api/chapters', { courseHref: currentCourse.href });
+    if (!d.ok) { $('studyBody').innerHTML = `<div class="msg show err">✗ ${escapeHtml(d.error)}</div>`; return; }
+    renderChapters(d.chapters || []);
+  } catch (e) {
+    $('studyBody').innerHTML = `<div class="msg show err">✗ ${escapeHtml(e.message)}</div>`;
+  }
+};
+
+function renderChapters(chapters) {
+  if (!chapters.length) {
+    $('studyBody').innerHTML = '<span class="muted" style="font-size:12.5px">没有解析到章节</span>';
+    return;
+  }
+  let html = `<div class="row" style="margin-bottom:8px">
+    <span class="pill">共 ${chapters.length} 节</span>
+    <span class="grow"></span>
+    <button class="sm primary" id="btnStudyAll">全部刷</button>
+    <button class="sm" id="btnStudyFirst10">刷前 10 节</button>
+  </div>`;
+
+  html += chapters.slice(0, 40).map((c, i) => `
+    <div class="ai-row">
+      <span class="q-idx">${i + 1}</span>
+      <div class="ai-main">
+        <div class="ai-title">${escapeHtml(c.title)}</div>
+      </div>
+      <button class="sm chapter-run" data-i="${i}">学</button>
+    </div>`).join('');
+
+  $('studyBody').innerHTML = html;
+
+  const startStudy = async (list) => {
+    if (!list.length) return;
+    const rate = parseFloat($('studyRate').value) || 1.5;
+    const docSeconds = parseInt($('studyDocSec').value, 10) || 20;
+    const warn = rate >= 2 ? '\n\n⚠️ 2 倍速有被清空学习进度的风险，确认继续？' : '';
+    if (!confirm(`将学习 ${list.length} 节，倍速 ${rate}x，文档停留 ${docSeconds} 秒。${warn}`)) return;
+    const r = await post('/api/study', {
+      chapters: list.map(c => ({
+        title: c.title, knowledgeid: c.knowledgeid,
+        courseid: c.courseid, clazzid: c.clazzid, cpi: c.cpi,
+      })),
+      rate, docSeconds, limit: list.length,
+    });
+    if (r.ok) showMsg($('courseMsg'), `✓ 刷课已启动：${r.count} 节 · ${r.rate}x，去「④ 任务」看进度`, 'ok');
+    else showMsg($('courseMsg'), '✗ ' + r.error, 'err');
+  };
+
+  document.querySelectorAll('.chapter-run').forEach(btn => {
+    btn.onclick = () => startStudy([chapters[Number(btn.dataset.i)]]);
+  });
+  const all = $('btnStudyAll');
+  if (all) all.onclick = () => startStudy(chapters);
+  const first10 = $('btnStudyFirst10');
+  if (first10) first10.onclick = () => startStudy(chapters.slice(0, 10));
+}
 
 $('btnLoadHw').onclick = async () => {
   if (!currentCourse) return;
