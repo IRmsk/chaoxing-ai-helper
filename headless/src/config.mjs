@@ -82,6 +82,10 @@ export function loadConfig(overrides = {}) {
     /* ---- 行为 ---- */
     systemPrompt: read('CXAI_SYSTEM_PROMPT', DEFAULT_SYSTEM_PROMPT),
     maxRounds: readInt('CXAI_MAX_ROUNDS', 30),
+    /** 自定的合格分数（默认 80）。实际判定取 max(本值, 页面达标线)。 */
+    passScore: readInt('CXAI_PASS_SCORE', 80),
+    /** 不达标时最多重跑几次（默认 2）。 */
+    retryMax: readInt('CXAI_RETRY_MAX', 2),
     /** 每轮间隔（毫秒），前后再加 ±30% 抖动，避免固定节奏。 */
     roundIntervalMs: readInt('CXAI_ROUND_INTERVAL_MS', 3000),
     replyTimeoutMs: readInt('CXAI_REPLY_TIMEOUT_MS', 120_000),
@@ -139,6 +143,10 @@ const ENV_PATH = resolve(ROOT, '.env');
  * @param {Record<string, string|number|boolean>} patch
  */
 export function saveEnv(patch) {
+  // 防呆：API Key 被学习通密码覆盖过一次，这里拦住
+  if (patch.CXAI_API_KEY && patch.CXAI_PASSWORD && String(patch.CXAI_API_KEY) === String(patch.CXAI_PASSWORD)) {
+    throw new Error('拒绝写入：CXAI_API_KEY 与 CXAI_PASSWORD 相同，疑似把学习通密码填到了 API Key');
+  }
   let lines = [];
   if (existsSync(ENV_PATH)) {
     lines = readFileSync(ENV_PATH, 'utf8').split(/\r?\n/);
@@ -181,6 +189,8 @@ export function applyPatch(config, patch) {
     roundIntervalMs: 'CXAI_ROUND_INTERVAL_MS',
     temperature: 'CXAI_TEMPERATURE',
     systemPrompt: 'CXAI_SYSTEM_PROMPT',
+    passScore: 'CXAI_PASS_SCORE',
+    retryMax: 'CXAI_RETRY_MAX',
   };
   const envPatch = {};
   for (const [field, envKey] of Object.entries(map)) {
@@ -190,7 +200,7 @@ export function applyPatch(config, patch) {
     envPatch[envKey] = value;
   }
   // 数值型字段统一转一下
-  for (const k of ['maxRounds', 'roundIntervalMs']) {
+  for (const k of ['maxRounds', 'roundIntervalMs', 'passScore', 'retryMax']) {
     if (k in patch) config[k] = Number.parseInt(String(patch[k]), 10) || config[k];
   }
   if ('temperature' in patch) config.temperature = Number.parseFloat(String(patch.temperature)) || 1;
@@ -213,6 +223,8 @@ export function publicConfig(config) {
     phoneMasked: config.phone ? config.phone.replace(/^(\d{3})\d+(\d{4})$/, '$1****$2') : '',
     targetUrl: config.targetUrl,
     maxRounds: config.maxRounds,
+    passScore: config.passScore,
+    retryMax: config.retryMax,
     roundIntervalMs: config.roundIntervalMs,
     temperature: config.temperature,
     systemPrompt: config.systemPrompt,

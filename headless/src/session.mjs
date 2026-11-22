@@ -331,6 +331,140 @@ export class BrowserSession {
   }
 
   /**
+   * 抓某门课的作业列表（含完成状态与截止时间）。
+   *
+   * 作业在课程页的「作业」tab，iframe 是 `mooc1.chaoxing.com/mooc2/work/list`。
+   * 每行 `onclick="goTask(this)"`，行文本形如：
+   *   「7-课前作业-职业环境与健康  未完成  截止 12-06」
+   *
+   * @param {string} courseHref
+   */
+  async listHomeworks(courseHref) {
+    if (!this.page) throw new Error('浏览器未启动');
+    const page = this.page;
+
+    await page.goto(courseHref, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await page.waitForTimeout(5000);
+
+    // 点「作业」，带重试
+    let frame = null;
+    for (let attempt = 0; attempt < 3 && !frame; attempt += 1) {
+      const ok = await page
+        .evaluate(() => {
+          const el = [...document.querySelectorAll('a,li,div,span')].filter(
+            (e) => (e.textContent || '').trim() === '作业',
+          );
+          if (!el.length) return false;
+          el[0].click();
+          return true;
+        })
+        .catch(() => false);
+      if (!ok) {
+        await page.waitForTimeout(2000);
+        continue;
+      }
+      for (let i = 0; i < 10; i += 1) {
+        await page.waitForTimeout(2000);
+        frame = page.frames().find((f) => /work\/list/.test(f.url()));
+        if (frame) break;
+      }
+    }
+    if (!frame) return [];
+
+    // 等列表渲染
+    for (let i = 0; i < 8; i += 1) {
+      const n = await frame.evaluate(() => document.querySelectorAll('[onclick*=goTask], li').length).catch(() => 0);
+      if (n > 0) break;
+      await page.waitForTimeout(2000);
+    }
+
+    return frame.evaluate(() => {
+      const out = [];
+      const seen = new Set();
+      for (const el of document.querySelectorAll('[onclick*=goTask]')) {
+        const raw = (el.innerText || '').replace(/\s+/g, ' ').trim();
+        if (!raw || raw.length < 5) continue;
+        const title = raw.replace(/(已完成|未完成|待提交|进行中|已过期).*$/, '').trim();
+        if (!title || seen.has(title)) continue;
+        seen.add(title);
+
+        const done = /已完成/.test(raw);
+        const deadlineM = raw.match(/(?:截止|剩余)\s*[:：]?\s*([0-9\-: \u4e00-\u9fa5]+)/);
+        out.push({
+          title,
+          done,
+          raw: raw.slice(0, 100),
+          deadline: deadlineM ? deadlineM[1].trim() : '',
+          href: (el.querySelector('a')?.getAttribute('href') || '').slice(0, 200),
+          onclick: (el.getAttribute('onclick') || '').slice(0, 60),
+        });
+      }
+      return out;
+    });
+  }
+
+  /**
+   * 点开某条作业，返回新页面 URL（可能是新窗口）。
+   *
+   * @param {string} courseHref
+   * @param {string} title 作业标题，用来定位点哪一条
+   */
+  async openHomework(courseHref, title) {
+    const page = this.page;
+    await this.listHomeworks(courseHref); // 确保停在作业列表
+
+    const frame = page.frames().find((f) => /work\/list/.test(f.url()));
+    if (!frame) return null;
+
+    const popupPromise = this.context.waitForEvent('page', { timeout: 15_000 }).catch(() => null);
+    const clicked = await frame.evaluate((t) => {
+      const el = [...document.querySelectorAll('[onclick*=goTask]')].find((e) =>
+        (e.innerText || '').includes(t),
+      );
+      if (!el) return false;
+      el.click();
+      return true;
+    }, title);
+    if (!clicked) return null;
+
+    const popup = await popupPromise;
+    const target = popup || page;
+    await target.waitForTimeout(6000);
+    return { page: target, url: target.url() };
+  }
+
+  /**
+   * 取任务的「评分要点」。
+   *
+   * 学习通不给文字评语，但 `load-data` 接口的 `requirement` 字段里写着
+   * 这次实践要覆盖哪几个方面（形如「① xxx；② yyy；③ zzz」）——
+   * 这就是打分的维度，照着答比什么都准。
+   *
+   * @param {{courseid: string, clazzid: string, cpi: string, uuid: string}} args
+   * @returns {Promise<{ requirement: string, title: string, scene: string } | null>}
+   */
+  async fetchTaskRequirement({ courseid, clazzid, cpi, uuid }) {
+    if (!this.page || !uuid) return null;
+    try {
+      const url =
+        'https://mooc2-ans.chaoxing.com/mooc2-ans/ai-evaluate/v2/answer/load-data' +
+        `?courseid=${courseid}&clazzid=${clazzid}&cpi=${cpi}&publishRelationUuid=${uuid}`;
+      return await this.page.evaluate(async (u) => {
+        const r = await fetch(u, { credentials: 'include' });
+        const j = await r.json();
+        const d = j?.data || {};
+        return {
+          requirement: d.requirement || '',
+          title: d.title || '',
+          scene: d.scene || '',
+        };
+      }, url);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 读当前登录账号的档案（姓名 / 学校 / uid / 头像）。
    *
    * 学习通个人空间把昵称放在 `.user-name`，学校名是首屏第一段文字，
@@ -771,15 +905,25 @@ export class BrowserSession {
 
     const info = await page.evaluate(() => {
       const text = (document.body.innerText || '').replace(/\s+/g, ' ').trim();
+      const url = location.href;
+      // 任务形态判定：不同类型页面完全不同
+      let kind = 'unknown';
+      if (/situationalDialogue/i.test(url)) kind = 'dialogue';
+      else if (/think-ladder|thinkLadder/i.test(url)) kind = 'ladder';
+      else if (/阶梯闯关/.test(text)) kind = 'ladder';
+      else if (/开始对话|医患情景|情景对话/.test(text)) kind = 'dialogue';
+
       const scoreM = text.match(/最终得分\s*(\d+)\s*分/);
+      const avgM = text.match(/(?:平均分|最高分)[^\d]{0,6}(\d+)\s*分/);
       const timesM = text.match(/已练习\s*(\d+)\s*次/);
       const reqM = text.match(/达标标准[:：]?\s*([^。]{0,40}?分)/);
       // 情景说明：通常在「情景生成」之后
       const scenarioIdx = text.indexOf('情景生成');
       const scenario = scenarioIdx >= 0 ? text.slice(scenarioIdx + 4, scenarioIdx + 500).trim() : '';
       return {
-        url: location.href,
-        score: scoreM ? Number(scoreM[1]) : null,
+        url,
+        kind,
+        score: scoreM ? Number(scoreM[1]) : (avgM ? Number(avgM[1]) : null),
         attempts: timesM ? Number(timesM[1]) : 0,
         requirementText: reqM ? reqM[1] : '',
         requirement: (reqM && Number((reqM[1].match(/(\d+)/) || [])[1])) || 80,

@@ -100,6 +100,13 @@
   .acc-row .ar-main{flex:1;min-width:0}
   .acc-row .ar-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .acc-row .ar-meta{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .q-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;
+    background:#0b0e13;border:1px solid var(--line);margin-bottom:6px;font-size:12.5px}
+  .q-row.running{border-color:#2f4a6e;background:#101a2b}
+  .q-idx{width:18px;text-align:center;color:var(--muted);font-size:11px;flex:0 0 18px}
+  .q-main{flex:1;min-width:0}
+  .q-title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .q-sub{font-size:11px;color:var(--muted);margin-top:1px}
   .basket{background:var(--card);border:1px solid #2f4a6e;border-radius:12px;
     padding:10px 12px;margin-bottom:11px;display:flex;align-items:center;gap:9px}
   .bk-main{flex:1;min-width:0}
@@ -156,6 +163,8 @@
       <input id="cApiKey" type="password" placeholder="留空表示不修改">
       <label>模型</label>
       <input id="cModel" placeholder="deepseek-chat">
+      <label>合格分数 <span style="color:#5b6478">（默认 80；页面达标线更高时取页面值）</span></label>
+      <input id="cPassScore" type="number" min="0" max="100" placeholder="80" inputmode="numeric">
       <div class="row" style="margin-top:12px">
         <button class="primary" id="btnSaveApi">保存</button>
         <button id="btnTest">测试连接</button>
@@ -240,6 +249,7 @@
         <h2 style="margin:0">我的课程</h2>
         <span class="grow"></span>
         <button class="sm" id="btnLoadCourses">加载课程</button>
+        <button class="sm" id="btnForceCourses" title="忽略缓存重新抓取">强制刷新</button>
       </div>
       <div id="courseList"><span class="muted" style="font-size:12.5px">点右上「加载课程」（约 15 秒）</span></div>
       <div class="row" style="margin-top:12px" id="batchBar" hidden>
@@ -254,9 +264,15 @@
       <div class="row" style="margin-bottom:10px">
         <h2 style="margin:0" id="courseDetailTitle">课程详情</h2>
         <span class="grow"></span>
+        <button class="sm" id="btnLoadHw">作业</button>
+        <button class="sm" id="btnRefreshTasks">刷新任务</button>
         <button class="sm" id="btnCloseCourse">关闭</button>
       </div>
       <div id="courseDetailBody"></div>
+      <div id="hwPanel" style="display:none;margin-top:12px">
+        <div class="sec-h">作业</div>
+        <div id="hwBody"></div>
+      </div>
     </div>
   </div>
 
@@ -271,7 +287,8 @@
       <div class="bar"><i id="barFill"></i></div>
       <div class="grid" style="margin-top:13px">
         <div class="kv">模型<b id="kModel" style="font-size:13px">-</b></div>
-        <div class="kv">已跑<b id="kRan">0 轮</b></div>
+        <div class="kv">已跑<b id="kRan">0 个</b></div>
+        <div class="kv">排队<b id="kPending">0</b></div>
       </div>
       <div class="msg" id="runMsg"></div>
     </div>
@@ -284,6 +301,15 @@
         <span class="grow"></span>
         <button class="sm" id="btnReports">报告</button>
       </div>
+    </div>
+
+    <div class="card" id="queueCard" style="display:none">
+      <div class="row" style="margin-bottom:9px">
+        <h2 style="margin:0">队列</h2>
+        <span class="grow"></span>
+        <span class="muted" style="font-size:11.5px" id="queueSummary"></span>
+      </div>
+      <div id="queueBody"></div>
     </div>
 
     <div class="card">
@@ -342,18 +368,24 @@ async function loadConfig() {
   const c = d.config || {};
   $('cBaseUrl').value = c.baseUrl || '';
   $('cModel').value = c.model || '';
+  $('cPassScore').value = c.passScore ?? 80;
   $('cApiKey').placeholder = c.hasApiKey ? `已配置 ${c.apiKeyMasked}（留空不修改）` : '未配置，请填写';
   $('cTargetUrl').value = c.targetUrl || '';
   $('cPhone').placeholder = c.hasPhone ? `已保存 ${c.phoneMasked}（留空不修改）` : '13800000000';
   $('cSmsPhone').placeholder = c.hasPhone ? c.phoneMasked : '13800000000';
   if (c.hasPhone && !$('cSmsPhone').value) $('cSmsPhone').placeholder = c.phoneMasked;
   $('kModel').textContent = c.model || '-';
+  cfgPassScore = c.passScore ?? 80;
   return c;
 }
 
 /* ---------- 接口 ---------- */
 $('btnSaveApi').onclick = async () => {
-  const body = { baseUrl: $('cBaseUrl').value.trim(), model: $('cModel').value.trim() };
+  const body = {
+    baseUrl: $('cBaseUrl').value.trim(),
+    model: $('cModel').value.trim(),
+    passScore: Number.parseInt($('cPassScore').value, 10) || 80,
+  };
   const k = $('cApiKey').value.trim();
   if (k) body.apiKey = k;
   const r = await post('/api/config', body);
@@ -515,21 +547,32 @@ $('btnDetect').onclick = async () => {
 /* ---------- 课程 ---------- */
 let courseCache = [];
 
-$('btnLoadCourses').onclick = async () => {
-  showMsg($('courseMsg'), '加载中，约 15 秒…', 'info');
+async function loadCourses(force) {
+  const msg = $('courseMsg');
+  showMsg(msg, force ? '强制刷新中，约 15 秒…' : '加载中…', 'info');
   $('btnLoadCourses').disabled = true;
+  $('btnForceCourses').disabled = true;
   try {
-    const d = await api('/api/courses');
-    if (!d.ok) { showMsg($('courseMsg'), '✗ ' + d.error, 'err'); return; }
+    const d = await api('/api/courses' + (force ? '?refresh=1' : ''));
+    if (!d.ok) { showMsg(msg, '✗ ' + d.error, 'err'); return; }
     courseCache = d.courses || [];
-    hideMsg($('courseMsg'));
+    if (d.cached) {
+      const min = Math.round((d.ageMs || 0) / 60000);
+      showMsg(msg, `✓ 来自缓存（${min < 1 ? '刚刚' : min + ' 分钟前'}），要最新点「强制刷新」`, 'info');
+    } else {
+      showMsg(msg, `✓ 已抓取 ${courseCache.length} 门课程`, 'ok');
+    }
     renderCourses(courseCache);
   } catch (e) {
-    showMsg($('courseMsg'), '✗ ' + e.message, 'err');
+    showMsg(msg, '✗ ' + e.message, 'err');
   } finally {
     $('btnLoadCourses').disabled = false;
+    $('btnForceCourses').disabled = false;
   }
-};
+}
+
+$('btnLoadCourses').onclick = () => loadCourses(false);
+$('btnForceCourses').onclick = () => loadCourses(true);
 
 function renderCourses(courses) {
   if (!courses.length) {
@@ -565,7 +608,11 @@ function escapeHtml(s) {
 
 let aiTasks = [];
 
+let currentCourse = null;
+let lastTaskCache = null;
+
 async function openCourse(c) {
+  currentCourse = c;
   $('courseDetailCard').style.display = 'block';
   $('courseDetailTitle').textContent = c.title || '(无标题)';
   $('courseDetailBody').innerHTML =
@@ -577,11 +624,15 @@ async function openCourse(c) {
       return;
     }
     aiTasks = d.tasks || [];
+    lastTaskCache = d.cached ? { ageMs: d.ageMs } : null;
     renderAiTasks(c);
   } catch (e) {
     $('courseDetailBody').innerHTML = `<div class="msg show err">✗ ${escapeHtml(e.message)}</div>`;
   }
 }
+
+let cfgPassScore = 80;
+function configPassScore() { return cfgPassScore; }
 
 function renderAiTasks(course) {
   if (!aiTasks.length) {
@@ -592,7 +643,10 @@ function renderAiTasks(course) {
   const todo = aiTasks.filter(t => t.done !== true && !t.expiredNote);
   const done = aiTasks.filter(t => t.done === true || t.expiredNote);
 
-  let html = `<div class="row" style="margin-bottom:10px">
+  const cacheNote = lastTaskCache
+    ? `<div class="muted" style="font-size:11px;margin-bottom:6px">任务来自缓存（${Math.round((lastTaskCache.ageMs||0)/60000)} 分钟前）</div>`
+    : '';
+  let html = cacheNote + `<div class="row" style="margin-bottom:10px">
     <span class="pill" style="border-color:#17553f;color:#8ff0c4">已达标 ${done.length}</span>
     <span class="pill" style="border-color:#5c2226;color:#ffb4b4">可跑 ${todo.length}</span>
   </div>
@@ -602,6 +656,9 @@ function renderAiTasks(course) {
 
   const rowHtml = (t, idx) => {
     const score = t.score === null || t.score === undefined ? '未做' : t.score + ' 分';
+    const rawReq = t.requirement || 0;
+    const myReq = Number(configPassScore()) || 80;
+    const showReq = Math.max(rawReq, myReq);
     const st = t.done === true ? 'done' : t.done === false ? 'todo' : 'unk';
     const badge = t.expiredNote ? '已结束' :
                   t.done === true ? '✓ 达标' :
@@ -613,7 +670,7 @@ function renderAiTasks(course) {
         : '<span class="task-check-ph"></span>'}
       <div class="ai-main">
         <div class="ai-title">${escapeHtml(t.title || '(无标题)')}</div>
-        <div class="ai-sub">${score} · 练习 ${t.attempts ?? '-'} 次 · 达标 ${t.requirement ?? 80}</div>
+        <div class="ai-sub">${score} · 练习 ${t.attempts ?? '-'} 次 · 判定线 ${showReq}</div>
       </div>
       <div class="ai-badge ${st}">${badge}</div>
       ${selectable ? `<button class="sm primary ai-run" data-i="${idx}">跑</button>` : ''}
@@ -725,10 +782,15 @@ async function scanAllScores() {
     try {
       const r = await post('/api/ai/task-score', { stuUrl: t.stuUrl });
       if (!r.ok) continue;
-      const req = r.requirement || 80;
+      // 判定线 = max(页面达标线, 用户自定分数)
+      const req = Math.max(r.requirement || 0, cfgPassScore || 80);
+      t.requirement = req;
+      t.score = r.score;
+      t.attempts = r.attempts;
+      t.done = r.score !== null && r.score >= req;
       const sub = row.querySelector('.ai-sub');
       if (sub) {
-        sub.textContent = `${r.score === null ? '未做' : r.score + ' 分'} · 练习 ${r.attempts ?? '-'} 次 · 达标 ${req}`;
+        sub.textContent = `${r.score === null ? '未做' : r.score + ' 分'} · 练习 ${r.attempts ?? '-'} 次 · 判定线 ${req}`;
       }
       const badge = row.querySelector('.ai-badge');
       const ok = r.done === true;
@@ -746,6 +808,8 @@ async function scanAllScores() {
 
   if (msg) { msg.className = 'msg show ok'; msg.textContent = `✓ 扫描完成，共 ${targets.length} 个任务`; }
   btn.disabled = false;
+  // 重新分组：已达标的移到下面，避免混在「可跑」里
+  renderAiTasks(currentCourse || {});
 }
 
 async function runSelected(tasks) {
@@ -753,17 +817,25 @@ async function runSelected(tasks) {
   if (!confirm(`将依次跑这 ${tasks.length} 个 AI 实践：\n\n· ${names}\n\n每个答 10 轮后自动结束评估。继续？`)) return;
   showMsg($('courseMsg'), `已启动 ${tasks.length} 个任务，去「④ 任务」看进度`, 'info');
   const r = await post('/api/run-todo', {
-    tasks: tasks.map(t => ({ stuUrl: t.stuUrl, title: t.title, requirement: t.requirement })),
+    tasks: tasks.map(t => ({ stuUrl: t.stuUrl, title: t.title, requirement: t.requirement, uuid: t.uuid })),
   });
   if (r.ok) showMsg($('courseMsg'), `✓ 已启动 ${r.count} 个任务`, 'ok');
   else showMsg($('courseMsg'), '✗ ' + r.error, 'err');
 }
 
 async function runOne(task) {
-  showMsg($('courseMsg'), `开始执行：${task.title}`, 'info');
-  const r = await post('/api/run-task', { stuUrl: task.stuUrl, title: task.title });
-  if (r.ok) showMsg($('courseMsg'), `已启动：${task.title}，去「④ 任务」看进度`, 'ok');
-  else showMsg($('courseMsg'), '✗ ' + r.error, 'err');
+  const r = await post('/api/run-task', {
+    stuUrl: task.stuUrl,
+    title: task.title,
+    requirement: task.requirement,
+    uuid: task.uuid,
+  });
+  if (!r.ok) { showMsg($('courseMsg'), '✗ ' + r.error, 'err'); return; }
+  if (r.queued) {
+    showMsg($('courseMsg'), `已排队：${task.title}（前方还有 ${r.pending ?? '?'} 个）`, 'info');
+  } else {
+    showMsg($('courseMsg'), `开始执行：${task.title}，去「④ 任务」看进度`, 'ok');
+  }
 }
 
 async function runTodo(course, todo) {
@@ -776,6 +848,91 @@ async function runTodo(course, todo) {
 }
 
 $('btnCloseCourse').onclick = () => { $('courseDetailCard').style.display = 'none'; };
+
+$('btnLoadHw').onclick = async () => {
+  if (!currentCourse) return;
+  const panel = $('hwPanel');
+  panel.style.display = 'block';
+  $('hwBody').innerHTML = '<span class="muted" style="font-size:12.5px">加载作业列表…（约 15 秒）</span>';
+  try {
+    const d = await post('/api/homeworks', { courseHref: currentCourse.href });
+    if (!d.ok) { $('hwBody').innerHTML = `<div class="msg show err">✗ ${escapeHtml(d.error)}</div>`; return; }
+    renderHomeworks(d.items || []);
+  } catch (e) {
+    $('hwBody').innerHTML = `<div class="msg show err">✗ ${escapeHtml(e.message)}</div>`;
+  }
+};
+
+function renderHomeworks(items) {
+  if (!items.length) {
+    $('hwBody').innerHTML = '<span class="muted" style="font-size:12.5px">这门课没有作业</span>';
+    return;
+  }
+  const todo = items.filter(x => !x.done);
+  const done = items.filter(x => x.done);
+  let html = `<div class="row" style="margin-bottom:8px">
+    <span class="pill" style="border-color:#17553f;color:#8ff0c4">已完成 ${done.length}</span>
+    <span class="pill" style="border-color:#5c2226;color:#ffb4b4">未完成 ${todo.length}</span>
+  </div>`;
+
+  const row = (h) => `<div class="ai-row ${h.done ? 'done' : ''}">
+    <div class="ai-main">
+      <div class="ai-title">${escapeHtml(h.title)}</div>
+      <div class="ai-sub">${h.done ? '已完成' : '未完成'}${h.deadline ? ' · ' + escapeHtml(h.deadline) : ''}</div>
+    </div>
+    ${h.done ? '<span class="ai-badge done">✓</span>' : `<button class="sm primary hw-run" data-title="${escapeHtml(h.title)}">答</button>`}
+  </div>`;
+
+  if (todo.length) { html += '<div class="sec-h">未完成</div>' + todo.map(row).join(''); }
+  if (done.length) { html += '<div class="sec-h" style="margin-top:10px">已完成</div>' + done.slice(0, 10).map(row).join(''); }
+  $('hwBody').innerHTML = html;
+
+  document.querySelectorAll('.hw-run').forEach(btn => {
+    btn.onclick = async () => {
+      const title = btn.dataset.title;
+      if (!confirm(`开始答「${title}」？\n\n会自动解析题目、作答并提交。`)) return;
+      btn.disabled = true;
+      btn.textContent = '答…';
+      try {
+        const r = await post('/api/homework/answer', {
+          courseHref: currentCourse.href,
+          title,
+        });
+        if (r.ok) {
+          const detail = (r.detail || []).map(x => `第${x.index}题[${x.type}] → ${x.answer}`).join('\n');
+          showMsg($('courseMsg'),
+            `✓ 解析 ${r.questions} 题，作答 ${r.answered} 题，回填 ${r.filled} 题${r.submitted ? '，已提交' : ''}\n${detail}`,
+            'ok');
+          $('btnLoadHw').click();
+        } else {
+          showMsg($('courseMsg'), '✗ ' + r.error + (r.pageText ? '\n页面：' + r.pageText.slice(0, 120) : ''), 'err');
+        }
+      } catch (e) {
+        showMsg($('courseMsg'), '✗ ' + e.message, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '答';
+      }
+    };
+  });
+}
+
+$('btnRefreshTasks').onclick = async () => {
+  if (!currentCourse) return;
+  $('courseDetailBody').innerHTML = '<span class="muted" style="font-size:12.5px">强制刷新任务列表…（约 20 秒）</span>';
+  try {
+    const d = await post('/api/ai/tasks', { courseHref: currentCourse.href, scores: false, refresh: true });
+    if (!d.ok) {
+      $('courseDetailBody').innerHTML = `<div class="msg show err">✗ ${escapeHtml(d.error)}</div>`;
+      return;
+    }
+    aiTasks = d.tasks || [];
+    lastTaskCache = null;
+    renderAiTasks(currentCourse);
+  } catch (e) {
+    $('courseDetailBody').innerHTML = `<div class="msg show err">✗ ${escapeHtml(e.message)}</div>`;
+  }
+};
 
 function selectedCourses() {
   return [...document.querySelectorAll('.course-check:checked')]
@@ -830,14 +987,19 @@ function renderEvents(events) {
   $('events').innerHTML = events.slice().reverse().map(e => {
     const t = new Date(e.at).toLocaleTimeString('zh-CN');
     let body;
-    if (e.type === 'status') body = `[${PHASE[e.phase] || e.phase}] ${e.round || ''}${e.limit ? ' / ' + e.limit : ''}`;
+    if (e.type === 'status') {
+      if (e.phase === 'retry') body = `<b style="color:#fbbf24">重跑</b> ${e.message || ''}`;
+      else body = `[${PHASE[e.phase] || e.phase}] ${e.round || ''}${e.limit ? ' / ' + e.limit : ''}`;
+    }
     else if (e.type === 'question') body = `第 ${e.round} 轮提问：${(e.text||'').slice(0,80)}…`;
     else if (e.type === 'round') body = `第 ${e.round} 轮完成 · 作答 ${(e.answer||'').length} 字 · 回复 ${(e.reply||'').length} 字`;
     else if (e.type === 'task-done') {
       const r = e.report || {};
       const req = r.requirement || 80;
       const before = r.scoreBefore === null || r.scoreBefore === undefined ? '未做' : r.scoreBefore + ' 分';
-      if (r.stoppedBy === 'ALREADY_DONE') {
+      if (r.stoppedBy === 'UNSUPPORTED_KIND') {
+        body = `${r.title || '任务'} · <b style="color:#8b93a3">跳过</b>（阶梯闯关答题模式，暂只支持情景对话）`;
+      } else if (r.stoppedBy === 'ALREADY_DONE') {
         body = `${r.title || '任务'} · <b style="color:#34d399">${before}</b> 已达标（≥${req}），跳过`;
       } else if (r.stoppedBy === 'ERROR' || r.error) {
         body = `${r.title || '任务'} · <b style="color:#f87171">失败</b>：${r.error || ''}`;
@@ -853,6 +1015,43 @@ function renderEvents(events) {
     else body = JSON.stringify(e).slice(0,100);
     return `<div class="ev"><span class="t">${t}</span>${body}</div>`;
   }).join('');
+}
+
+function renderQueue(r) {
+  const card = $('queueCard');
+  if (!card) return;
+  const active = r.active || [];
+  const queue = r.queue || [];
+  if (!active.length && !queue.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  $('queueSummary').textContent = `运行 ${active.length} · 排队 ${queue.length}`;
+
+  let html = '';
+  if (active.length) {
+    html += '<div class="sec-h">正在跑</div>';
+    html += active.map((t, i) => `
+      <div class="q-row running">
+        <span class="q-idx">${i + 1}</span>
+        <div class="q-main">
+          <div class="q-title">${escapeHtml(t.title)}</div>
+          <div class="q-sub">账号 …${escapeHtml(t.phoneTail || '?')}</div>
+        </div>
+        <span class="ai-badge todo">运行中</span>
+      </div>`).join('');
+  }
+  if (queue.length) {
+    html += '<div class="sec-h" style="margin-top:11px">排队中</div>';
+    html += queue.map((t, i) => `
+      <div class="q-row">
+        <span class="q-idx">${i + 1}</span>
+        <div class="q-main">
+          <div class="q-title">${escapeHtml(t.title)}</div>
+          <div class="q-sub">账号 …${escapeHtml(t.phoneTail || '?')}</div>
+        </div>
+        <span class="ai-badge unk">等待</span>
+      </div>`).join('');
+  }
+  $('queueBody').innerHTML = html;
 }
 
 function renderAccount(acc, loggedIn) {
@@ -907,7 +1106,7 @@ let basket = [];
 function basketKey(t) { return (t.phone || '') + '|' + t.stuUrl; }
 
 function toggleBasket(task, phone, checked) {
-  const item = { phone, title: task.title, stuUrl: task.stuUrl, requirement: task.requirement };
+  const item = { phone, title: task.title, stuUrl: task.stuUrl, requirement: task.requirement, uuid: task.uuid };
   const key = basketKey(item);
   basket = basket.filter(x => basketKey(x) !== key);
   if (checked) basket.push(item);
@@ -937,7 +1136,7 @@ $('btnQueueRun').onclick = async () => {
   const byPhone = new Map();
   for (const t of basket) {
     if (!byPhone.has(t.phone)) byPhone.set(t.phone, []);
-    byPhone.get(t.phone).push({ stuUrl: t.stuUrl, title: t.title, requirement: t.requirement });
+    byPhone.get(t.phone).push({ stuUrl: t.stuUrl, title: t.title, requirement: t.requirement, uuid: t.uuid });
   }
   const desc = [...byPhone.entries()]
     .map(([p, ts]) => `${String(p).slice(-4)}：${ts.length} 个`)
@@ -948,7 +1147,10 @@ $('btnQueueRun').onclick = async () => {
     items: [...byPhone.entries()].map(([phone, ts]) => ({ phone, tasks: ts })),
   });
   if (r.ok) {
-    showMsg($('courseMsg'), `✓ 队列已启动：${r.count} 个任务 / ${r.accounts} 个账号`, 'ok');
+    showMsg($('courseMsg'),
+      r.queued ? `已排队 ${r.count} 个任务（前方 ${r.pending ?? '?'} 个）`
+               : `✓ 队列已启动：${r.count} 个任务 / ${r.accounts} 个账号`,
+      r.queued ? 'info' : 'ok');
     basket = [];
     renderBasket();
     document.querySelectorAll('.task-check:checked').forEach(cb => { cb.checked = false; });
@@ -1025,6 +1227,7 @@ async function refresh() {
       (r.limit ? Math.min(100, ((r.round||0)/r.limit)*100) : 0) + '%';
     $('kModel').textContent = cfg.model || '-';
     $('kRan').textContent = (r.round || 0) + ' 个任务';
+    if ($('kPending')) $('kPending').textContent = r.pending ?? 0;
 
     if (r.error) showMsg($('runMsg'), r.error, 'err');
     else hideMsg($('runMsg'));
@@ -1035,13 +1238,26 @@ async function refresh() {
 
     if (s.loggedIn !== null) setLoginPill(s.loggedIn);
     renderAccount(s.account, s.loggedIn);
+    renderQueue(r);
     renderEvents(s.events);
 
     // 有任务完成 → 按标题把最新分数直接写回那一行（不重载列表）
     const doneEvts = (s.events || []).filter(x => x.type === 'task-done');
     if (doneEvts.length !== lastDoneCount) {
+      const prevCount = lastDoneCount;
       lastDoneCount = doneEvts.length;
       const r0 = doneEvts[doneEvts.length - 1].report || {};
+      // 每完成一个就刷新一次任务列表（读缓存 + 合并分数，很快）
+      if (lastDoneCount > 0 && currentCourse && $('courseDetailCard').style.display !== 'none') {
+        post('/api/ai/tasks', { courseHref: currentCourse.href, scores: false })
+          .then((d) => {
+            if (d.ok && Array.isArray(d.tasks)) {
+              aiTasks = d.tasks;
+              renderAiTasks(currentCourse);
+            }
+          })
+          .catch(() => {});
+      }
       if (r0.title && r0.scoreAfter !== null && r0.scoreAfter !== undefined) {
         const rows = [...document.querySelectorAll('.ai-row')];
         for (const row of rows) {

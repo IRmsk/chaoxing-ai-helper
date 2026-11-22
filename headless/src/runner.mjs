@@ -15,6 +15,7 @@ import { resolve } from 'node:path';
 
 import { createLogger } from './logger.mjs';
 import { feedbackHints, recordFeedback } from './feedback.mjs';
+import { saveScore } from './cache.mjs';
 
 const log = createLogger('runner');
 
@@ -356,10 +357,16 @@ export function buildPrompt(question, pageContext) {
 export async function runAiTask({ session, config, llm, task, onEvent, signal }) {
   const emit = onEvent ?? (() => {});
   const page = session.page;
-  const requirement = task.requirement || 80;
+  // 判定线 = max(用户自定, 页面达标线)，避免页面要求更高时白跑
+  const pageReq = task.requirement || 0;
+  const userReq = config.passScore || 80;
+  const requirement = Math.max(pageReq, userReq);
   const report = {
     title: task.title,
     stuUrl: task.stuUrl,
+    requirement,
+    userRequirement: userReq,
+    pageRequirement: pageReq || null,
     scoreBefore: null,
     scoreAfter: null,
     rounds: 0,
@@ -371,11 +378,30 @@ export async function runAiTask({ session, config, llm, task, onEvent, signal })
   emit({ type: 'status', phase: 'detecting', message: `打开 ${task.title}` });
   const info = await session.aiTaskInfo(task.stuUrl);
   report.scoreBefore = info.score;
-  log.info(`${task.title}：当前得分 ${info.score ?? '未做'}，达标 ${requirement}`);
+  report.kind = info.kind || 'unknown';
+  log.info(
+    `${task.title}：当前得分 ${info.score ?? '未做'}，` +
+      `判定线 ${requirement}（用户 ${userReq} / 页面 ${pageReq || '未标注'}）`,
+  );
+
+  // 类型不支持：阶梯闯关是答题模式，与情景对话流程完全不同
+  if (info.kind === 'ladder') {
+    report.stoppedBy = 'UNSUPPORTED_KIND';
+    report.error = '该任务是「阶梯闯关」答题模式，当前只支持情景对话类';
+    log.info(`跳过（阶梯闯关类型）：${task.title}`);
+    return report;
+  }
 
   if (info.score !== null && info.score >= requirement) {
     report.stoppedBy = 'ALREADY_DONE';
+    report.scoreAfter = info.score;
     log.info('已达标，跳过');
+    saveScore(task.stuUrl, {
+      score: info.score,
+      attempts: info.attempts,
+      requirement,
+      title: task.title,
+    });
     return report;
   }
 
@@ -401,7 +427,22 @@ export async function runAiTask({ session, config, llm, task, onEvent, signal })
   const { frame } = found;
 
   /* ---- 3. 判断谁先开口 ---- */
-  const scenario = info.scenario || '';
+  // 优先从接口拿「评分要点」——这是真正的打分维度
+  let scoringPoints = '';
+  if (task.uuid) {
+    const m = task.stuUrl.match(/courseid=(\d+).*?clazzid=(\d+).*?cpi=(\d+)/);
+    if (m) {
+      const req2 = await session.fetchTaskRequirement({
+        courseid: m[1], clazzid: m[2], cpi: m[3], uuid: task.uuid,
+      });
+      if (req2?.requirement) {
+        scoringPoints = req2.requirement;
+        log.info(`已取到评分要点（${scoringPoints.length} 字）`);
+      }
+    }
+  }
+
+  const scenario = scoringPoints || info.scenario || '';
   // 同类任务的历史高分评语 → 直接注入提示词，越跑越准
   const hints = feedbackHints(task.title);
   if (hints) log.info('已注入历史高分评语作为参考');
@@ -470,11 +511,14 @@ export async function runAiTask({ session, config, llm, task, onEvent, signal })
     try {
       // 末尾两轮引导收束：给出诊断结论与防治建议，评分看的是覆盖度
       const finishingSoon = report.rounds >= config.maxRounds - 2;
+      const pointsHint = scoringPoints
+        ? `\n\n【本次实践的评分维度（务必逐条覆盖）】\n${scoringPoints}`
+        : '\n\n【评分要点】回答要有专业深度，逐步覆盖任务要求的各个方面。';
       const guide = finishingSoon
-        ? '\n\n【本轮要求】对话即将结束，请在这一轮给出**明确的诊断结论 + 治疗与防治建议**，' +
-          '把病原体形态、生活史、致病机制、临床表现、诊断、流行与防治六个方面串起来说清楚。'
-        : '\n\n【评分要点】回答要有专业深度，逐步覆盖：病原体形态、生活史、致病机制、' +
-          '临床表现、诊断方法、流行与防治。像真实医生一样追问、解释、给建议。';
+        ? pointsHint +
+          '\n\n【本轮要求】对话即将结束，请在这一轮把上述维度**全部串起来**做一次完整总结，' +
+          '给出明确结论与可执行建议。'
+        : pointsHint + '\n\n像真实医生一样追问、解释、给建议，逐步把每个维度都讲到。';
 
       answerText = await llm.chat({
         system: config.systemPrompt,
@@ -588,8 +632,14 @@ export async function runAiTask({ session, config, llm, task, onEvent, signal })
     /* 拿不到分数不影响结论 */
   }
 
-  // 落库：评分 + 评语 → 供下次同类任务复用
+  // 分数落库（每跑一次存一次）
   const finalScore = report.scoreAfter ?? report.scoreBefore;
+  saveScore(task.stuUrl, {
+    score: report.scoreAfter,
+    attempts: report.rounds,
+    requirement,
+    title: task.title,
+  });
   if (finalScore !== null) {
     recordFeedback({
       title: task.title,

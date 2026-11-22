@@ -10,3 +10,4 @@ data/
 .accounts.json
 .account.json
 storage-state.json
+.cache/
